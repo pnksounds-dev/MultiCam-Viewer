@@ -23,6 +23,7 @@
   "build": {
     "appId": "com.multicam.viewer",
     "productName": "MultiCam Viewer",
+    "icon": "assets/MCVLOGO1.png",
     "win": {
       "target": "nsis"
     },

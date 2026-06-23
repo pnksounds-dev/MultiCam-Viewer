@@ -242,7 +242,7 @@ button:active {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #111120;
+  background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   padding: 0 16px;
   height: var(--status-h);
@@ -421,7 +421,7 @@ button:active {
 .guide-tabs {
   display: flex;
   border-bottom: 1px solid var(--border);
-  background: #111120;
+  background: var(--bg-control);
 }
 
 .guide-tab {
@@ -498,8 +498,8 @@ button:active {
 .guide-note {
   font-size: 11px !important;
   color: #776655 !important;
-  background: #1a1510;
-  border: 1px solid #332211;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 5px 8px;
   margin-top: 2px;
@@ -807,42 +807,38 @@ body.clean-mode #vcam-canvas {
 
 /* Dim and disable premium-gated elements when not licensed */
 .premium-locked {
-  opacity: 0.45;
-  pointer-events: none;
+  opacity: 0.5;
   position: relative;
 }
 
-.premium-locked::after {
-  content: '🔒 Premium';
+.premium-locked > * {
+  pointer-events: none;
+}
+
+/* Hover tooltip for premium-locked elements */
+.premium-locked::before {
+  content: 'Activate a license key to unlock this feature';
   position: absolute;
-  top: 50%;
+  bottom: calc(100% + 6px);
   left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
+  transform: translateX(-50%);
   background: var(--bg-card);
-  padding: 4px 12px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 5px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  pointer-events: none;
   white-space: nowrap;
-  z-index: 10;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
 }
 
-/* For inline elements like the greenscreen wrap, position the lock differently */
-#greenscreen-wrap.premium-locked::after {
-  top: auto;
-  bottom: -28px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-/* Settings sections with premium lock — show overlay at top */
-#settings-body section.premium-locked::after {
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+.premium-locked:hover::before {
+  opacity: 1;
 }
 
 /* Dropdown pro-tag positioning */
@@ -870,7 +866,7 @@ body.clean-mode #vcam-canvas {
   font-weight: 600;
   color: var(--green);
   font-family: 'Cascadia Code', 'Consolas', monospace;
-  background: #0a0a18;
+  background: var(--bg-dark);
   padding: 2px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -888,7 +884,7 @@ body.clean-mode #vcam-canvas {
   gap: 8px;
   padding: 8px 14px;
   border-radius: 8px;
-  background: #111120;
+  background: var(--bg-control);
   border: 1px solid var(--border);
   color: var(--text);
   text-decoration: none;
@@ -899,7 +895,7 @@ body.clean-mode #vcam-canvas {
 }
 
 .social-link:hover {
-  background: #1a1a2e;
+  background: var(--bg-card);
   border-color: var(--green);
   color: var(--green);
 }
@@ -994,7 +990,7 @@ body.clean-mode #vcam-canvas {
 #settings-body code {
   font-family: 'Cascadia Code', 'Consolas', monospace;
   font-size: 11px;
-  background: #0a0a18;
+  background: var(--bg-dark);
   color: var(--green);
   padding: 1px 5px;
   border-radius: 3px;
@@ -1005,7 +1001,7 @@ body.clean-mode #vcam-canvas {
   font-size: 12px;
   padding: 6px 10px;
   border-radius: 6px;
-  background: #111120;
+  background: var(--bg-control);
 }
 
 .hidden {
