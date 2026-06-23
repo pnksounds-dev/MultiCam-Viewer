@@ -14,6 +14,33 @@ const windows = new Set();
 // { title -> { proc, deviceId } }
 const scrcpyProcs = new Map();
 
+// ─── IPC input validation ────────────────────────────────────────────────────
+// The renderer is local/trusted, but validating every IPC payload ensures a
+// compromised or buggy renderer cannot pass malformed values into process
+// spawning or window operations.
+const ALLOWED_PERMISSIONS = new Set(['media', 'display-capture']);
+
+function clampInt(value, min, max, fallback) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
+// ADB serials: alphanumeric, dot, colon, dash, underscore (covers USB serials
+// and ip:port transport ids). Reject anything else to avoid argument injection.
+function isValidSerial(serial) {
+  return typeof serial === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(serial);
+}
+
+function isValidCameraId(id) {
+  return /^\d{1,4}$/.test(String(id));
+}
+
+// scrcpy window titles are app-generated; keep them to a safe character set.
+function isValidWindowTitle(title) {
+  return typeof title === 'string' && /^[A-Za-z0-9 _.:#-]{1,128}$/.test(title);
+}
+
 // ─── Paths ─────────────────────────────────────────────────────────────────
 function getResourcesPath() {
   return app.isPackaged ? process.resourcesPath : __dirname;
@@ -249,17 +276,35 @@ function createWindow() {
     },
   });
 
+  // Only grant the permissions this app actually needs (camera/mic + screen
+  // capture). Everything else is denied so injected/remote content cannot
+  // silently gain sensitive access.
   win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
-    callback(true); // allow media + display-capture
+    callback(ALLOWED_PERMISSIONS.has(permission));
   });
-  win.webContents.session.setPermissionCheckHandler(() => true);
+  win.webContents.session.setPermissionCheckHandler((wc, permission) => {
+    return ALLOWED_PERMISSIONS.has(permission);
+  });
+
+  // Block navigation away from the local app files. Any attempt to navigate to
+  // an external/remote origin is prevented.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) event.preventDefault();
+  });
 
   win.loadFile('index.html');
 
   // Make the output window (opened via window.open from the renderer) borderless
-  // so the whole body can be used to drag it.
-  win.webContents.setWindowOpenHandler(({ features }) => {
-    const parsed = new URLSearchParams(features.replace(/,/g, '&'));
+  // so the whole body can be used to drag it. Only allow opening the local
+  // output.html — deny any other URL.
+  win.webContents.setWindowOpenHandler(({ url, features }) => {
+    let isOutput = false;
+    try {
+      isOutput = url.startsWith('file://') && /\/output\.html(?:[?#]|$)/.test(url);
+    } catch { isOutput = false; }
+    if (!isOutput) return { action: 'deny' };
+
+    const parsed = new URLSearchParams((features || '').replace(/,/g, '&'));
     const width = parseInt(parsed.get('width'), 10) || 960;
     const height = parseInt(parsed.get('height'), 10) || 540;
     return {
@@ -290,17 +335,38 @@ function createWindow() {
 
 // ─── IPC Handlers ────────────────────────────────────────────────────────────
 ipcMain.handle('phones:list',    async () => listPhones());
-ipcMain.handle('phones:cameras', async (e, serial) => listCameras(serial));
+ipcMain.handle('phones:cameras', async (e, serial) => {
+  if (!isValidSerial(serial)) return { ok: false, error: 'Invalid device serial', cameras: [] };
+  return listCameras(serial);
+});
 
 ipcMain.handle('scrcpy:start', async (e, opts) => {
+  const o = opts || {};
+  if (!isValidSerial(o.serial))        return { ok: false, error: 'Invalid device serial' };
+  if (!isValidCameraId(o.cameraId))    return { ok: false, error: 'Invalid camera id' };
+  if (!isValidWindowTitle(o.windowTitle)) return { ok: false, error: 'Invalid window title' };
+
+  const safeOpts = {
+    serial: o.serial,
+    cameraId: String(o.cameraId),
+    windowTitle: o.windowTitle,
+    maxSize: o.maxSize != null ? clampInt(o.maxSize, 320, 7680, 0) : 0,
+    fps:     o.fps != null ? clampInt(o.fps, 1, 240, 0) : 0,
+  };
+
   const appWin = BrowserWindow.fromWebContents(e.sender);
   const bounds = appWin ? appWin.getBounds() : null;
-  return startScrcpyCamera({ ...opts, bounds });
+  return startScrcpyCamera({ ...safeOpts, bounds });
 });
-ipcMain.handle('scrcpy:stop',  async (e, windowTitle) => { stopScrcpy(windowTitle); return { ok: true }; });
+ipcMain.handle('scrcpy:stop',  async (e, windowTitle) => {
+  if (!isValidWindowTitle(windowTitle)) return { ok: false, error: 'Invalid window title' };
+  stopScrcpy(windowTitle);
+  return { ok: true };
+});
 
 // Find the desktopCapturer source id for a given scrcpy window title
 ipcMain.handle('capture:findWindow', async (e, windowTitle) => {
+  if (!isValidWindowTitle(windowTitle)) return { ok: false };
   const sources = await desktopCapturer.getSources({
     types: ['window'],
     thumbnailSize: { width: 0, height: 0 },
@@ -320,9 +386,13 @@ ipcMain.handle('output:close', async (e) => {
   return { ok: true };
 });
 
-ipcMain.handle('output:move', async (e, { dx, dy }) => {
+ipcMain.handle('output:move', async (e, payload) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win && !win.isDestroyed()) {
+    // Clamp per-move deltas to a sane range so a runaway renderer can't fling
+    // the window arbitrarily far in a single call.
+    const dx = clampInt(payload && payload.dx, -4000, 4000, 0);
+    const dy = clampInt(payload && payload.dy, -4000, 4000, 0);
     const b = win.getBounds();
     win.setBounds({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
   }
@@ -331,7 +401,21 @@ ipcMain.handle('output:move', async (e, { dx, dy }) => {
 
 ipcMain.handle('show-dialog', async (e, opts) => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  return dialog.showMessageBox(win, opts);
+  const o = opts || {};
+  // Only pass through known-safe message box fields.
+  const ALLOWED_TYPES = new Set(['none', 'info', 'error', 'question', 'warning']);
+  const safe = {
+    type: ALLOWED_TYPES.has(o.type) ? o.type : 'info',
+    title: typeof o.title === 'string' ? o.title.slice(0, 256) : undefined,
+    message: typeof o.message === 'string' ? o.message.slice(0, 2000) : '',
+    detail: typeof o.detail === 'string' ? o.detail.slice(0, 4000) : undefined,
+    buttons: Array.isArray(o.buttons)
+      ? o.buttons.slice(0, 8).map(b => String(b).slice(0, 128))
+      : undefined,
+    defaultId: Number.isInteger(o.defaultId) ? o.defaultId : undefined,
+    cancelId: Number.isInteger(o.cancelId) ? o.cancelId : undefined,
+  };
+  return dialog.showMessageBox(win, safe);
 });
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────

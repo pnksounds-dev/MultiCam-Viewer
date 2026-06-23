@@ -528,7 +528,9 @@ async function initSegmentation() {
   try {
     selfieSegmentation = new window.SelfieSegmentation({
       locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation@0.1.1675465747/${file}`;
+        // Load MediaPipe assets from the bundled local copy so green screen
+        // works offline and inside the packaged app (no CDN dependency).
+        return `vendor/mediapipe/selfie_segmentation/${file}`;
       }
     });
     selfieSegmentation.setOptions({

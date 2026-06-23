@@ -29,7 +29,11 @@
       "index.html",
       "styles.css",
       "output.html",
-      "output-renderer.js"
+      "output-renderer.js",
+      "vendor/**/*"
+    ],
+    "asarUnpack": [
+      "vendor/**/*"
     ],
     "extraResources": [
       {
