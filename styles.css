@@ -909,6 +909,8 @@ body.clean-mode #vcam-canvas {
 }
 
 #settings-panel {
+  position: relative;
+  z-index: 101;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -916,7 +918,7 @@ body.clean-mode #vcam-canvas {
   height: 92vh;
   max-width: 1200px;
   max-height: 92vh;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 40px rgba(0,0,0,0.6);

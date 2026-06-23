@@ -5,12 +5,23 @@ const path = require('path');
 const fs = require('fs');
 
 async function main() {
-  const electronPath = path.join(__dirname, 'node_modules', 'electron', 'dist', 'Electron.exe');
-  if (!fs.existsSync(electronPath)) {
-    console.log('Electron binary not found at', electronPath);
-    console.log('Run this after npm install.');
+  const exeName = 'MultiCam Viewer.exe';
+  const candidates = [
+    path.join(__dirname, 'dist', 'win-unpacked', exeName),
+    path.join(__dirname, 'dist', 'win-unpacked', 'MultiCam Viewer.exe'),
+  ];
+
+  let electronPath = null;
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { electronPath = c; break; }
+  }
+
+  if (!electronPath) {
+    console.error('Packaged app not found. Run "npm run build" first.');
     process.exit(1);
   }
+
+  console.log('Flipping fuses on:', electronPath);
 
   await flipFuses(electronPath, {
     version: FuseVersion.V1,
@@ -21,7 +32,7 @@ async function main() {
     [FuseV1Options.EnableNodeCliInspectArguments]: false,
   });
 
-  console.log('Electron fuses flipped successfully.');
+  console.log('Electron fuses flipped successfully on packaged binary.');
 }
 
 main().catch(err => {
