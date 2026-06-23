@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell } = require('electron');
 const path = require('path');
 const { execSync, execFile, spawn } = require('child_process');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ─── Settings persistence ────────────────────────────────────────────────────
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -17,6 +18,8 @@ const DEFAULT_SETTINGS = {
   exposure: 0,
   contrast: 0,
   saturation: 0,
+  licenseKey: '',
+  licensedCameras: 2,
 };
 
 const LOG_FILE = path.join(app.getPath('userData'), 'app.log');
@@ -49,6 +52,82 @@ function saveSettings(settings) {
 }
 
 let appSettings = loadSettings();
+
+// ─── License verification (main process — not exposed to DevTools) ───────────
+const LICENSE_SECRET = 'MultiCamViewer-LicenseSecret-2026';
+const SALT = 'multicam-license-salt';
+const PBKDF2_ITERATIONS = 100000;
+
+function deriveLicenseKey() {
+  return crypto.pbkdf2Sync(LICENSE_SECRET, SALT, PBKDF2_ITERATIONS, 32, 'sha256');
+}
+
+function decryptLicenseKey(keyString) {
+  try {
+    const clean = keyString.replace(/\s+/g, '').replace(/-/g, '');
+    if (!clean) return null;
+    const combined = Buffer.from(clean, 'base64');
+    if (combined.length < 28) return null;
+
+    const iv = combined.subarray(0, 12);
+    const tag = combined.subarray(combined.length - 16);
+    const ciphertext = combined.subarray(12, combined.length - 16);
+
+    const key = deriveLicenseKey();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function loadLicenseDatabase() {
+  try {
+    const dbPath = path.join(getResourcesPath(), 'licenses.json');
+    if (fs.existsSync(dbPath)) {
+      return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    }
+  } catch {}
+  return { keys: [] };
+}
+
+function verifyLicenseKey(keyString) {
+  const payload = decryptLicenseKey(keyString);
+  if (!payload) return { valid: false, reason: 'Invalid license key' };
+  if (!payload.id || typeof payload.cameras !== 'number') {
+    return { valid: false, reason: 'Malformed license key' };
+  }
+
+  const db = loadLicenseDatabase();
+  const entry = (db.keys || []).find(k => k.id === payload.id);
+  if (!entry) return { valid: false, reason: 'License key not recognized' };
+  if (entry.revoked) return { valid: false, reason: 'License key revoked' };
+  if (entry.expires && new Date(entry.expires) < new Date()) {
+    return { valid: false, reason: 'License key expired' };
+  }
+
+  return { valid: true, cameras: payload.cameras, expires: entry.expires };
+}
+
+// ─── Virtual camera native addon ──────────────────────────────────────────────
+let VcamAddon = null;
+const vcamInstances = new Map(); // slot → VcamNative instance
+try {
+  VcamAddon = require('./vcam-native/index.js');
+  logToFile('vcam-native addon loaded successfully');
+} catch (err) {
+  logToFile('Failed to load vcam-native addon: ' + err.message);
+}
+
+function getVcamForSlot(slot) {
+  if (!VcamAddon) return null;
+  if (!vcamInstances.has(slot)) {
+    vcamInstances.set(slot, new VcamAddon());
+  }
+  return vcamInstances.get(slot);
+}
 
 // ─── Splash Window ───────────────────────────────────────────────────────────
 let splashWindow = null;
@@ -331,23 +410,17 @@ function stopAllScrcpy() {
 
 // ─── Virtual Camera (UnityCapture) ────────────────────────────────────────────
 function isVcamInstalled() {
-  try {
-    const result = execSync(
-      'reg query "HKLM\\SOFTWARE\\Classes\\CLSID" /f "UnityCapture" /k',
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
-    );
-    return result.includes('UnityCapture');
-  } catch {
+  const searchTerms = ['UnityCapture', 'Unity Video Capture', 'MultiCam'];
+  for (const term of searchTerms) {
     try {
-      const result2 = execSync(
-        'reg query "HKLM\\SOFTWARE\\Classes\\CLSID" /f "Unity Video Capture" /k',
+      const result = execSync(
+        `reg query "HKLM\\SOFTWARE\\Classes\\CLSID" /f "${term}" /k`,
         { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
       );
-      return result2.length > 20;
-    } catch {
-      return false;
-    }
+      if (result.length > 20) return true;
+    } catch {}
   }
+  return false;
 }
 
 function registerVcam() {
@@ -359,8 +432,9 @@ function registerVcam() {
     };
   }
   try {
+    // Register 4 capture devices so OBS sees MultiCam, MultiCam 2, MultiCam 3, MultiCam 4
     execSync(
-      `powershell -Command "Start-Process regsvr32 -ArgumentList '/s \\"${dllPath}\\"' -Verb RunAs -Wait"`,
+      `powershell -Command "Start-Process regsvr32 -ArgumentList '/s /i:UnityCaptureDevices=4 \\"${dllPath}\\"' -Verb RunAs -Wait"`,
       { stdio: 'pipe', timeout: 30000 }
     );
     return { success: true };
@@ -418,6 +492,19 @@ function createWindow(show = true) {
 
   win.loadFile(path.join(__dirname, 'index.html'));
 
+  // Block DevTools in production builds to hinder tampering.
+  if (app.isPackaged) {
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' ||
+          (input.control && input.shift && (input.key === 'I' || input.key === 'J' || input.key === 'C'))) {
+        event.preventDefault();
+      }
+    });
+    win.webContents.on('devtools-opened', () => {
+      win.webContents.closeDevTools();
+    });
+  }
+
   // Make the output window (opened via window.open from the renderer) borderless
   // so the whole body can be used to drag it. Only allow opening the local
   // output.html — deny any other URL.
@@ -456,6 +543,7 @@ function createWindow(show = true) {
   win.webContents.on('did-finish-load', () => {
     win.webContents.send('vcam-slot', slotIndex);
     win.webContents.send('vcam-dll-path', getVcamDllPath());
+    win.webContents.send('window-index', slotIndex);
 
     // Close the splash screen once the main window is ready to show.
     if (splashWindow && !splashWindow.isDestroyed()) {
@@ -532,7 +620,58 @@ ipcMain.handle('capture:findWindow', async (e, windowTitle) => {
 ipcMain.handle('vcam-check',    async () => isVcamInstalled());
 ipcMain.handle('vcam-register', async () => registerVcam());
 
+// ─── Virtual camera native frame writing ─────────────────────────────────────
+ipcMain.handle('vcam:available', async () => {
+  return { available: VcamAddon !== null };
+});
+
+ipcMain.handle('vcam:init', async (e, opts) => {
+  if (!VcamAddon) return { ok: false, error: 'Native addon not loaded' };
+  const o = opts || {};
+  const slot = Math.max(0, Math.min(9, parseInt(o.slot, 10) || 0));
+  const width = Math.max(16, Math.min(3840, parseInt(o.width, 10) || 1280));
+  const height = Math.max(16, Math.min(2160, parseInt(o.height, 10) || 720));
+  const vcam = getVcamForSlot(slot);
+  if (!vcam) return { ok: false, error: 'Failed to create vcam instance' };
+  const ok = vcam.init(slot, width, height);
+  return { ok, slot, width, height };
+});
+
+ipcMain.handle('vcam:frame', async (e, opts) => {
+  const o = opts || {};
+  const slot = Math.max(0, Math.min(9, parseInt(o.slot, 10) || 0));
+  const vcam = vcamInstances.get(slot);
+  if (!vcam) return { ok: false };
+  let buf;
+  if (Buffer.isBuffer(o.data)) {
+    buf = o.data;
+  } else if (o.data instanceof ArrayBuffer) {
+    buf = Buffer.from(o.data);
+  } else if (o.data && o.data.buffer instanceof ArrayBuffer) {
+    buf = Buffer.from(o.data.buffer);
+  } else {
+    return { ok: false, error: 'Expected Buffer or ArrayBuffer' };
+  }
+  const ok = vcam.writeFrame(buf);
+  return { ok };
+});
+
+ipcMain.handle('vcam:stop', async (e, opts) => {
+  const o = opts || {};
+  const slot = Math.max(0, Math.min(9, parseInt(o.slot, 10) || 0));
+  const vcam = vcamInstances.get(slot);
+  if (vcam) vcam.close();
+  return { ok: true };
+});
+
 ipcMain.handle('open-new-window', async () => { createWindow(); return true; });
+ipcMain.handle('open-external', async (e, url) => {
+  if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+    await shell.openExternal(url);
+    return { ok: true };
+  }
+  return { ok: false, error: 'Invalid URL' };
+});
 
 ipcMain.handle('output:close', async (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -560,6 +699,29 @@ ipcMain.handle('settings:set', async (e, patch) => {
     saveSettings(appSettings);
   }
   return appSettings;
+});
+
+// ─── License IPC (verification runs in main process) ─────────────────────────
+ipcMain.handle('license:verify', async (e, keyString) => {
+  if (typeof keyString !== 'string' || keyString.length > 512) {
+    return { valid: false, reason: 'Invalid input' };
+  }
+  return verifyLicenseKey(keyString);
+});
+
+ipcMain.handle('license:check', async (e) => {
+  const key = appSettings.licenseKey;
+  if (!key) return { valid: false, cameras: 2 };
+  const result = verifyLicenseKey(key);
+  if (!result.valid) {
+    appSettings.licensedCameras = 2;
+    saveSettings(appSettings);
+  }
+  return result;
+});
+
+ipcMain.handle('app:getVersion', async () => {
+  return app.getVersion();
 });
 
 ipcMain.handle('show-dialog', async (e, opts) => {

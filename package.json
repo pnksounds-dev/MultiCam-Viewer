@@ -5,15 +5,20 @@
   "main": "main.js",
   "scripts": {
     "start": "wscript dev-launcher.vbs",
-    "build": "electron-builder --win --x64",
-    "build:dir": "electron-builder --win --x64 --dir"
+    "build": "node obfuscate.js obfuscate && electron-builder --win --x64 && node obfuscate.js restore",
+    "build:dir": "node obfuscate.js obfuscate && electron-builder --win --x64 --dir && node obfuscate.js restore",
+    "build:fuses": "node flip-fuses.js",
+    "obfuscate": "node obfuscate.js",
+    "obfuscate:dev": "javascript-obfuscator renderer.js --output renderer.js --compact --control-flow-flattening true --control-flow-flattening-probability 0.75 --string-array true --string-array-encoding base64 --string-array-threshold 0.75 --dead-code-injection true --dead-code-injection-threshold 0.4 --self-defending true --disable-console-output false --identifier-names-generator hexadecimal"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@electron/fuses": "^1.8.0",
     "electron": "^33.4.11",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "javascript-obfuscator": "^4.2.2"
   },
   "build": {
     "appId": "com.multicam.viewer",
@@ -25,7 +30,6 @@
       "main.js",
       "preload.js",
       "renderer.js",
-      "vcam-worker.js",
       "index.html",
       "splash.html",
       "launcher.vbs",
@@ -33,11 +37,16 @@
       "styles.css",
       "output.html",
       "output-renderer.js",
+      "licenses.json",
       "assets/**/*",
-      "vendor/**/*"
+      "vendor/**/*",
+      "vcam-native/**/*",
+      "node_modules/koffi/**/*",
+      "node_modules/@mediapipe/**/*"
     ],
     "asarUnpack": [
-      "vendor/**/*"
+      "vendor/**/*",
+      "node_modules/koffi/**/*"
     ],
     "extraResources": [
       {
@@ -56,6 +65,7 @@
   },
   "dependencies": {
     "@mediapipe/camera_utils": "0.3.1675466862",
-    "@mediapipe/selfie_segmentation": "0.1.1675465747"
+    "@mediapipe/selfie_segmentation": "0.1.1675465747",
+    "koffi": "^3.0.2"
   }
 }

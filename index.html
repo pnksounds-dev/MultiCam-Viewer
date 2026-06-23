@@ -49,11 +49,13 @@
           <div class="split-dropdown hidden" id="new-camera-dropdown">
             <button id="btn-new-same-window" title="Add a second camera inside this window">Add in this window</button>
             <button id="btn-new-separate" title="Open a separate MultiCam window">Open new MultiCam</button>
+            <span class="pro-tag">PRO</span>
           </div>
         </div>
         <button id="btn-output-window" title="Open a clean output window for OBS window capture">Output Window</button>
-        <div id="greenscreen-wrap">
+        <div id="greenscreen-wrap" class="premium-gated">
           <button id="btn-greenscreen" title="Toggle AI green screen">Green Screen</button>
+          <span class="pro-tag">PRO</span>
           <div id="greenscreen-controls" class="hidden">
             <input type="color" id="bg-color" value="#00ff00" title="Background color">
             <label id="bg-image-label" title="Use a background image">
@@ -184,14 +186,32 @@
             <input type="checkbox" id="setting-show-splash" checked>
             <span>Show splash screen on startup</span>
           </label>
+          <div class="settings-input-wrap">
+            <span>Theme</span>
+            <select id="setting-theme">
+              <option value="dusk">Dusk</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+        </section>
+        <section>
+          <h3>Premium License</h3>
+          <p id="premium-status-text">Free plan: up to 2 cameras</p>
+          <div class="settings-input-wrap">
+            <span>License Key</span>
+            <input type="text" id="license-key-input" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+          </div>
+          <button id="btn-activate-license">Activate License</button>
+          <button id="btn-clear-license" style="margin-left:8px;">Clear License</button>
         </section>
         <section>
           <h3>How phone capture works</h3>
           <p>This app talks to your phone over <strong>USB debugging (ADB)</strong> and uses bundled <strong>scrcpy</strong> to pull the camera feed directly — no app is installed on your phone. The feed is shown here and pushed to the virtual camera below.</p>
           <p>Requirements on the phone: Android 12+, <strong>USB Debugging enabled</strong>, and tap <strong>Allow</strong> on the debugging + camera prompts.</p>
         </section>
-        <section>
-          <h3>Video Adjustments</h3>
+        <section class="premium-gated">
+          <h3>Video Adjustments <span class="pro-tag">PRO</span></h3>
           <div class="settings-slider-wrap">
             <label>Threshold</label>
             <input type="range" id="settings-threshold" min="0" max="100" value="50">
@@ -234,7 +254,7 @@
           <h3>Virtual Camera Slots</h3>
           <p>Each open window outputs to a different slot in OBS:</p>
           <ul>
-            <li>Window 1 → <strong>MultiCam</strong> (or "Unity Video Capture" if using the original DLL)</li>
+            <li>Window 1 → <strong>MultiCam</strong></li>
             <li>Window 2 → <strong>MultiCam 2</strong></li>
             <li>Window 3 → <strong>MultiCam 3</strong></li>
           </ul>
@@ -248,13 +268,34 @@
             <li>Alternative — register the driver above and approve the UAC prompt</li>
             <li>In this app: select your <strong>phone camera</strong> in the dropdown</li>
             <li>In OBS: Add Source → <strong>Video Capture Device</strong></li>
-            <li>Device: <strong>"MultiCam"</strong> (or "Unity Video Capture" if using the original DLL)</li>
+            <li>Device: <strong>"MultiCam"</strong></li>
             <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"MultiCam 2"</strong></li>
           </ol>
         </section>
         <section>
           <h3>Window Capture (no driver needed)</h3>
           <p>Select your phone in the dropdown, then in OBS: Add Source → <strong>Window Capture</strong> → select <em>"MultiCam Viewer"</em>. Open a second app window for the second phone.</p>
+        </section>
+        <section>
+          <h3>About</h3>
+          <div class="about-version-wrap">
+            <span class="about-label">Version</span>
+            <span id="app-version-display" class="about-version">—</span>
+          </div>
+          <div class="social-links">
+            <a href="#" id="link-github" class="social-link" title="GitHub">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 2.9-.39c.98 0 1.97.13 2.9.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/></svg>
+              <span>GitHub</span>
+            </a>
+            <a href="#" id="link-website" class="social-link" title="Website">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span>Website</span>
+            </a>
+            <a href="#" id="link-discord" class="social-link" title="Discord">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.32 4.37A19.79 19.79 0 0 0 16.56 3c-.2.36-.43.84-.59 1.22a18.27 18.27 0 0 0-3.94 0c-.16-.38-.39-.86-.59-1.22a19.74 19.74 0 0 0-3.77 1.37C3.7 8.03 3.13 11.58 3.4 15.08a19.93 19.93 0 0 0 6.06 3.06c.49-.67.93-1.39 1.31-2.14-.72-.27-1.4-.61-2.04-1 .17-.13.34-.26.5-.4 3.93 1.82 8.18 1.82 12.06 0 .17.14.33.27.5.4-.65.39-1.33.73-2.05 1 .38.75.82 1.47 1.31 2.14a19.9 19.9 0 0 0 6.07-3.06c.33-4.06-.54-7.58-2.81-10.71zM9.54 13.09c-1.18 0-2.15-1.08-2.15-2.41 0-1.33.95-2.41 2.15-2.41 1.2 0 2.17 1.09 2.15 2.41 0 1.33-.95 2.41-2.15 2.41zm4.92 0c-1.18 0-2.15-1.08-2.15-2.41 0-1.33.95-2.41 2.15-2.41 1.2 0 2.17 1.09 2.15 2.41 0 1.33-.94 2.41-2.15 2.41z"/></svg>
+              <span>Discord</span>
+            </a>
+          </div>
         </section>
       </div>
     </div>

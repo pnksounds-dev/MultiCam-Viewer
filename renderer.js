@@ -44,6 +44,17 @@ const btnInstallVcamSettings   = document.getElementById('btn-install-vcam-setti
 const btnUninstallVcamSettings = document.getElementById('btn-uninstall-vcam-settings');
 const currentSlotDisplay = document.getElementById('current-slot-display');
 const settingShowSplash  = document.getElementById('setting-show-splash');
+const settingTheme       = document.getElementById('setting-theme');
+const premiumStatusText = document.getElementById('premium-status-text');
+const licenseKeyInput = document.getElementById('license-key-input');
+const btnActivateLicense = document.getElementById('btn-activate-license');
+const btnClearLicense = document.getElementById('btn-clear-license');
+
+// ─── About / social DOM refs ─────────────────────────────────────────────────
+const appVersionDisplay = document.getElementById('app-version-display');
+const linkGithub        = document.getElementById('link-github');
+const linkWebsite       = document.getElementById('link-website');
+const linkDiscord       = document.getElementById('link-discord');
 
 // ─── Green screen DOM refs ──────────────────────────────────────────────────
 const btnGreenscreen     = document.getElementById('btn-greenscreen');
@@ -71,7 +82,6 @@ const stSaturationVal    = document.getElementById('settings-saturation-val');
 let currentStream    = null;
 let vcamSlot         = 0;
 let vcamDriverReady  = false;
-let vcamWorker       = null;
 let fpsInterval      = null;
 let fpsFrameCount    = 0;
 let lastFpsTime      = Date.now();
@@ -80,11 +90,16 @@ let vcamCtx          = null;
 let activeScrcpyTitle = null;   // currently running scrcpy window title (if any)
 let sourceOptions    = [];      // metadata for each dropdown option (by value)
 let lastScrcpyError  = '';      // last error line from scrcpy output
+let windowIndex      = 0;       // 0-based window index (0 = first window)
 let vcamNativeReady  = false;   // true when the shared-memory frame bridge is active
 
 // ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
 const secondaryPanes = []; // { id, element, select, video, stream, scrcpyTitle }
 let nextPaneId = 1;
+
+// ─── Premium license state ───────────────────────────────────────────────────
+let licensedCameras = 2; // 2 for free, 4 when a valid license is activated
+let currentLicenseKey = '';
 
 // ─── Green screen state ───────────────────────────────────────────────────────
 let greenscreenEnabled = false;
@@ -132,7 +147,8 @@ function applySettings(settings) {
   if (settings.resolution && resSelect.querySelector(`option[value="${settings.resolution}"]`)) {
     resSelect.value = settings.resolution;
   }
-  if (settings.greenscreenEnabled) {
+  applyLicenseSettings(settings);
+  if (settings.greenscreenEnabled && isPremium()) {
     greenscreenEnabled = true;
     btnGreenscreen.classList.add('active');
     greenscreenControls.classList.remove('hidden');
@@ -163,6 +179,10 @@ function applySettings(settings) {
   if (typeof settings.showSplash === 'boolean') {
     settingShowSplash.checked = settings.showSplash;
   }
+  if (settings.theme) {
+    settingTheme.value = settings.theme;
+    document.documentElement.setAttribute('data-theme', settings.theme);
+  }
 }
 
 let saveSettingsTimer = null;
@@ -183,6 +203,9 @@ async function init() {
       vcamSlotDisplay.textContent = `→ ${label}`;
       currentSlotDisplay.textContent = label;
     });
+    window.electronAPI.onWindowIndex((idx) => {
+      windowIndex = idx;
+    });
     window.electronAPI.onScrcpyExited((data) => {
       if (data.windowTitle === activeScrcpyTitle) {
         statusText.textContent = 'Phone capture stopped' +
@@ -200,7 +223,8 @@ async function init() {
       }
     });
 
-    // Load saved settings
+    // Check license and load saved settings
+    await checkLicenseOnStartup();
     try {
       const settings = await window.electronAPI.getSettings();
       if (settings) applySettings(settings);
@@ -208,15 +232,19 @@ async function init() {
   }
 
   await refreshSources();
-  // If a last device was saved and still exists in the dropdown, select it.
-  try {
-    const settings = await window.electronAPI.getSettings();
-    if (settings && settings.lastDeviceIndex !== '' &&
-        [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
-      deviceSelect.value = String(settings.lastDeviceIndex);
-      startSelected();
-    }
-  } catch {}
+  // Only auto-select the last used camera in the first window.
+  // Additional windows start with no camera selected to avoid grabbing
+  // the same device that is already in use by window 1.
+  if (windowIndex === 0) {
+    try {
+      const settings = await window.electronAPI.getSettings();
+      if (settings && settings.lastDeviceIndex !== '' &&
+          [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
+        deviceSelect.value = String(settings.lastDeviceIndex);
+        startSelected();
+      }
+    } catch {}
+  }
   await checkVirtualCameraDriver();
 
   // Auto-refresh when a UVC device is plugged/unplugged
@@ -236,12 +264,12 @@ async function init() {
 }
 
 function slotLabel(slotIdx) {
-  return slotIdx === 0 ? 'Unity Video Capture' : `Unity Video Capture ${slotIdx + 1}`;
+  return slotIdx === 0 ? 'MultiCam' : `MultiCam ${slotIdx + 1}`;
 }
 
 // ─── Source Enumeration (phones via ADB + real UVC cameras) ───────────────────
 const VIRTUAL_OUTPUT_ONLY = [
-  'unity video capture', 'obs virtual camera', 'obs-camera',
+  'unity video capture', 'multicam', 'obs virtual camera', 'obs-camera',
   'manycam virtual', 'xsplit vcam', 'nvidia broadcast', 'snap camera',
 ];
 function isVirtualOutputOnly(label) {
@@ -468,7 +496,12 @@ function attachStream(name) {
     statusText.textContent = `Live: ${s.width || '?'}×${s.height || '?'} · ${name}`;
     document.title = `MultiCam — ${name}`;
     updateGreenscreenUI();
+  };
+  cameraVideo.onplaying = () => {
     startVcamOutput();
+  };
+  cameraVideo.onresize = () => {
+    if (currentStream) startVcamOutput();
   };
   startFpsCounter();
 }
@@ -517,8 +550,14 @@ function updateCameraGrid() {
 function addSecondaryPane() {
   newCameraDropdown.classList.add('hidden');
   const total = 1 + secondaryPanes.length;
-  if (total >= 4) {
-    statusText.textContent = 'Maximum 4 cameras per window reached';
+  const maxPanes = licensedCameras || 2; // 2 free, 4 with premium license
+  if (total >= maxPanes) {
+    if (licensedCameras <= 2) {
+      statusText.textContent = 'Upgrade to Premium to add more than 2 cameras';
+      settingsOverlay.classList.remove('hidden');
+    } else {
+      statusText.textContent = 'Maximum 4 cameras per window reached';
+    }
     return;
   }
 
@@ -658,12 +697,118 @@ function closeAllSecondaryPanes() {
   [...secondaryPanes].forEach(p => removeSecondaryPane(p.id));
 }
 
+function isPremium() {
+  return licensedCameras > 2;
+}
+
+function updatePremiumUI() {
+  if (!premiumStatusText) return;
+  if (isPremium()) {
+    premiumStatusText.textContent = `Premium active: up to ${licensedCameras} cameras`;
+    premiumStatusText.style.color = 'var(--green)';
+  } else {
+    premiumStatusText.textContent = 'Free plan: up to 2 cameras';
+    premiumStatusText.style.color = 'var(--text-muted)';
+  }
+  updatePremiumGating();
+}
+
+function showPremiumUpgrade(message) {
+  statusText.textContent = message || 'Premium feature — activate a license key to unlock';
+  settingsOverlay.classList.remove('hidden');
+}
+
+function updatePremiumGating() {
+  const premium = isPremium();
+  const gated = document.querySelectorAll('.premium-gated');
+  gated.forEach(el => {
+    el.classList.toggle('premium-locked', !premium);
+    el.querySelectorAll('input, button').forEach(input => { input.disabled = !premium; });
+  });
+}
+
+async function checkLicenseOnStartup() {
+  if (!window.electronAPI) return;
+  try {
+    const result = await window.electronAPI.checkLicense();
+    if (result && result.valid) {
+      licensedCameras = Math.max(2, Math.min(4, result.cameras || 4));
+    } else {
+      licensedCameras = 2;
+    }
+    updatePremiumUI();
+  } catch {}
+}
+
+async function activateLicense() {
+  const key = licenseKeyInput.value.trim();
+  if (!key) {
+    statusText.textContent = 'Enter a license key';
+    return;
+  }
+  if (!window.electronAPI) {
+    statusText.textContent = 'License module not loaded';
+    return;
+  }
+  const result = await window.electronAPI.verifyLicenseKey(key);
+  if (result.valid) {
+    licensedCameras = Math.max(2, Math.min(4, result.cameras || 4));
+    currentLicenseKey = key;
+    updatePremiumUI();
+    saveSettingsDebounced({ licenseKey: currentLicenseKey, licensedCameras });
+    statusText.textContent = `License activated: up to ${licensedCameras} cameras`;
+  } else {
+    licensedCameras = 2;
+    updatePremiumUI();
+    statusText.textContent = 'License invalid: ' + result.reason;
+  }
+}
+
+function clearLicense() {
+  licensedCameras = 2;
+  currentLicenseKey = '';
+  licenseKeyInput.value = '';
+  updatePremiumUI();
+  saveSettingsDebounced({ licenseKey: '', licensedCameras: 2 });
+  statusText.textContent = 'License cleared';
+}
+
+function applyLicenseSettings(settings) {
+  if (settings.licenseKey) {
+    licenseKeyInput.value = settings.licenseKey;
+    currentLicenseKey = settings.licenseKey;
+  }
+  if (typeof settings.licensedCameras === 'number') {
+    licensedCameras = Math.max(2, Math.min(4, settings.licensedCameras));
+  }
+  updatePremiumUI();
+  // Re-verify the saved key silently via the main process.
+  if (currentLicenseKey && window.electronAPI) {
+    window.electronAPI.verifyLicenseKey(currentLicenseKey)
+      .then(result => {
+        if (!result.valid) {
+          licensedCameras = 2;
+          if (greenscreenEnabled) {
+            greenscreenEnabled = false;
+            updateGreenscreenUI();
+            if (currentStream && vcamCtx) restartFrameLoop();
+          }
+          updatePremiumUI();
+        }
+      });
+  }
+}
+
 function toggleNewCameraDropdown() {
   newCameraDropdown.classList.toggle('hidden');
 }
 
 function openNewCameraSeparate() {
   newCameraDropdown.classList.add('hidden');
+  if (!isPremium()) {
+    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature — activate a license key to unlock');
+    return;
+  }
   window.electronAPI?.openNewWindow();
 }
 
@@ -690,47 +835,50 @@ function stopFpsCounter() {
 }
 
 // ─── Virtual Camera Output (UnityCapture) ─────────────────────────────────────
-function startVcamOutput() {
+let vcamNativeAvailable = false;
+let vcamRgbaTemp = null; // reusable RGBA buffer for conversion
+
+async function startVcamOutput() {
   if (!currentStream) return;
+  // Use actual video element dimensions if available, fall back to track settings
   const s = currentStream.getVideoTracks()[0].getSettings();
-  const w = s.width  || 1280;
-  const h = s.height || 720;
+  const w = cameraVideo.videoWidth  || s.width  || 1280;
+  const h = cameraVideo.videoHeight || s.height || 720;
 
   vcamCanvas.width = w; vcamCanvas.height = h;
   vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
 
   if (vcamDriverReady) {
-    if (vcamWorker) { vcamWorker.terminate(); vcamWorker = null; }
+    // Check if the native addon is available
     try {
-      vcamWorker = new Worker('vcam-worker.js');
-      vcamWorker.onmessage = (e) => {
-        const m = e.data;
-        if (m.type === 'ready') {
-          vcamNativeReady = !!m.nativeAvailable;
-          if (vcamNativeReady) {
-            vcamBadge.classList.remove('hidden');
-            setVcamStatus('green', `Virtual Camera active — ${slotLabel(vcamSlot)}`);
-          } else {
-            vcamBadge.classList.add('hidden');
-            setVcamStatus('yellow', 'Driver registered but frame bridge missing — use OBS Window Capture');
-          }
-          startFrameLoop(w, h);
-        } else if (m.type === 'error') {
+      const avail = await window.electronAPI.vcamAvailable();
+      vcamNativeAvailable = !!avail.available;
+    } catch { vcamNativeAvailable = false; }
+
+    if (vcamNativeAvailable) {
+      // Initialize shared memory via the native addon in the main process
+      try {
+        const result = await window.electronAPI.vcamInit({ slot: vcamSlot, width: w, height: h });
+        if (result.ok) {
+          vcamNativeReady = true;
+          vcamBadge.classList.remove('hidden');
+          setVcamStatus('green', `Virtual Camera active — ${slotLabel(vcamSlot)}`);
+        } else {
           vcamNativeReady = false;
           vcamBadge.classList.add('hidden');
-          setVcamStatus('yellow', 'Virtual cam frame error — use Window Capture in OBS');
-        } else if (m.type === 'info') {
-          // Log info from worker for debugging
-          console.log('[vcam-worker]', m.message);
+          setVcamStatus('yellow', 'Driver registered but shared memory init failed — use OBS Window Capture');
         }
-      };
-      vcamWorker.onerror = () => {
+      } catch (err) {
         vcamNativeReady = false;
         vcamBadge.classList.add('hidden');
-        setVcamStatus('yellow', 'Virtual cam worker error — use Window Capture in OBS');
-      };
-      vcamWorker.postMessage({ type: 'init', slot: vcamSlot, width: w, height: h });
-    } catch { /* window capture still works */ }
+        setVcamStatus('yellow', 'Virtual cam init error — use OBS Window Capture');
+      }
+    } else {
+      vcamNativeReady = false;
+      vcamBadge.classList.add('hidden');
+      setVcamStatus('yellow', 'Native addon not built — use OBS Window Capture');
+    }
+    startFrameLoop(w, h);
   } else {
     // No driver installed yet: still run the preview loop so green screen works
     startFrameLoop(w, h);
@@ -753,14 +901,22 @@ function setVideoFilters(ctx) {
   ctx.filter = `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`;
 }
 
+// Send RGBA frame data to the virtual camera via IPC
+// UnityCapture expects RGBA8 (format=0), top-down row order
+// The DirectShow filter converts RGBA→BGRA and handles bottom-up output internally
+function sendFrameToVcam(width, height) {
+  if (!vcamNativeReady) return;
+  const img = vcamCtx.getImageData(0, 0, width, height);
+  window.electronAPI.vcamFrame({ slot: vcamSlot, data: img.data.buffer }).catch(() => {});
+}
+
 function startRawFrameLoop(w, h) {
   function draw() {
     if (!currentStream || !vcamCtx) return;
     setVideoFilters(vcamCtx);
     vcamCtx.drawImage(cameraVideo, 0, 0, w, h);
     vcamCtx.filter = 'none';
-    const img = vcamCtx.getImageData(0, 0, w, h);
-    if (vcamWorker) vcamWorker.postMessage({ type: 'frame', data: img.data }, [img.data.buffer]);
+    sendFrameToVcam(w, h);
     vcamAnimFrame = requestAnimationFrame(draw);
   }
   vcamAnimFrame = requestAnimationFrame(draw);
@@ -787,7 +943,9 @@ function startSegmentationLoop() {
 
 function stopVcamOutput() {
   if (vcamAnimFrame) { cancelAnimationFrame(vcamAnimFrame); vcamAnimFrame = null; }
-  if (vcamWorker)    { vcamWorker.postMessage({ type: 'stop' }); vcamWorker.terminate(); vcamWorker = null; }
+  if (vcamNativeReady) {
+    window.electronAPI?.vcamStop({ slot: vcamSlot }).catch(() => {});
+  }
   vcamCtx = null;
   vcamNativeReady = false;
   vcamBadge.classList.add('hidden');
@@ -857,11 +1015,8 @@ function onSegmentationResults(results) {
   }
   vcamCtx.globalCompositeOperation = 'source-over';
 
-  // 4. Send composited frame to the virtual camera worker
-  if (vcamWorker) {
-    const img = vcamCtx.getImageData(0, 0, w, h);
-    vcamWorker.postMessage({ type: 'frame', data: img.data }, [img.data.buffer]);
-  }
+  // 4. Send composited frame to the virtual camera
+  sendFrameToVcam(w, h);
 }
 
 function drawCoverImage(ctx, img, w, h) {
@@ -909,6 +1064,10 @@ function updateGreenscreenUI() {
 }
 
 async function toggleGreenscreen() {
+  if (!isPremium()) {
+    showPremiumUpgrade('Green Screen is a Premium feature — activate a license key to unlock');
+    return;
+  }
   greenscreenEnabled = !greenscreenEnabled;
   updateGreenscreenUI();
   if (greenscreenEnabled) {
@@ -929,15 +1088,29 @@ async function checkVirtualCameraDriver() {
       vcamDriverReady = true;
       setVcamStatus('yellow', 'Driver registered — start a camera to test the frame bridge');
       btnInstallVcam.classList.add('hidden');
-      vcamInstallStatus.textContent = '✓ Driver registered. In OBS use Window Capture (recommended) or look for "MultiCam" / "Unity Video Capture".';
+      vcamInstallStatus.textContent = '✓ Driver registered. In OBS, look for "MultiCam" under Video Capture Devices.';
       vcamInstallStatus.style.color = 'var(--green)';
       if (currentStream) startVcamOutput();
     } else {
-      vcamDriverReady = false;
-      setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
-      btnInstallVcam.classList.remove('hidden');
-      vcamInstallStatus.textContent = 'Driver not registered. Click below to install.';
+      // Auto-register the driver on launch (will prompt for admin/UAC)
+      setVcamStatus('yellow', 'Installing virtual camera driver (admin prompt)…');
+      vcamInstallStatus.textContent = 'Installing driver…';
       vcamInstallStatus.style.color = 'var(--text-muted)';
+      const r = await window.electronAPI.registerVcam();
+      if (r.success) {
+        vcamDriverReady = true;
+        setVcamStatus('green', 'Virtual Camera driver registered');
+        btnInstallVcam.classList.add('hidden');
+        vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
+        vcamInstallStatus.style.color = 'var(--green)';
+        if (currentStream) startVcamOutput();
+      } else {
+        vcamDriverReady = false;
+        setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
+        btnInstallVcam.classList.remove('hidden');
+        vcamInstallStatus.textContent = '✗ ' + (r.error || 'Auto-install failed. Click below to retry.');
+        vcamInstallStatus.style.color = 'var(--text-muted)';
+      }
     }
   } catch {
     setVcamStatus('gray', 'Could not check driver status');
@@ -959,7 +1132,7 @@ async function installVcamDriver() {
     vcamDriverReady = true;
     setVcamStatus('green', 'Virtual Camera driver registered');
     btnInstallVcam.classList.add('hidden');
-    vcamInstallStatus.textContent = '✓ Registered! Restart OBS. Use Window Capture (recommended) or look for "MultiCam" / "Unity Video Capture".';
+    vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
     vcamInstallStatus.style.color = 'var(--green)';
     if (currentStream) startVcamOutput();
   } else {
@@ -984,7 +1157,19 @@ settingShowSplash.addEventListener('change', () => {
   saveSettingsDebounced({ showSplash: settingShowSplash.checked });
 });
 
-btnNewWindow.addEventListener('click', () => window.electronAPI?.openNewWindow());
+settingTheme.addEventListener('change', () => {
+  const theme = settingTheme.value;
+  document.documentElement.setAttribute('data-theme', theme);
+  saveSettingsDebounced({ theme });
+});
+
+btnNewWindow.addEventListener('click', () => {
+  if (!isPremium()) {
+    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature — activate a license key to unlock');
+    return;
+  }
+  window.electronAPI?.openNewWindow();
+});
 btnNewWindowMenu.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleNewCameraDropdown();
@@ -999,7 +1184,7 @@ btnNewSeparate.addEventListener('click', (e) => {
 });
 
 btnClosePane0.addEventListener('click', () => {
-  stopSelected();
+  stopCamera();
   closeAllSecondaryPanes();
 });
 
@@ -1031,6 +1216,18 @@ settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOver
 
 btnInstallVcam.addEventListener('click', installVcamDriver);
 btnInstallVcamSettings.addEventListener('click', installVcamDriver);
+btnActivateLicense.addEventListener('click', activateLicense);
+btnClearLicense.addEventListener('click', clearLicense);
+
+// ─── About / social links ────────────────────────────────────────────────────
+if (window.electronAPI) {
+  window.electronAPI.getAppVersion().then(v => {
+    if (v && appVersionDisplay) appVersionDisplay.textContent = `v${v}`;
+  }).catch(() => {});
+}
+if (linkGithub)  linkGithub.addEventListener('click',  (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://github.com/pnksounds-dev'); });
+if (linkWebsite) linkWebsite.addEventListener('click', (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://pnksounds.dev/'); });
+if (linkDiscord) linkDiscord.addEventListener('click', (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://discord.gg/DkyraHSbTW'); });
 btnUninstallVcamSettings.addEventListener('click', () => {
   vcamInstallStatus.textContent = 'To unregister, run as Admin: regsvr32 /u "vcam\\UnityCaptureFilter64.dll"';
   vcamInstallStatus.style.color = 'var(--text-muted)';

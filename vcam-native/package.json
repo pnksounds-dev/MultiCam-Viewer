@@ -1,0 +1,9 @@
+{
+  "name": "vcam-native",
+  "version": "1.0.0",
+  "description": "UnityCapture shared memory frame writer using Koffi FFI",
+  "main": "index.js",
+  "dependencies": {
+    "koffi": "^2.9.0"
+  }
+}

@@ -15,19 +15,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Virtual camera driver ──
   checkVcam:    () => ipcRenderer.invoke('vcam-check'),
   registerVcam: () => ipcRenderer.invoke('vcam-register'),
+  vcamAvailable: () => ipcRenderer.invoke('vcam:available'),
+  vcamInit:     (opts) => ipcRenderer.invoke('vcam:init', opts),
+  vcamFrame:    (opts) => ipcRenderer.invoke('vcam:frame', opts),
+  vcamStop:     (opts) => ipcRenderer.invoke('vcam:stop', opts),
 
   // ── Windows / dialogs ──
   openNewWindow:  () => ipcRenderer.invoke('open-new-window'),
   closeOutputWindow: () => ipcRenderer.invoke('output:close'),
   moveOutputWindow: (dx, dy) => ipcRenderer.invoke('output:move', { dx, dy }),
   showDialog:     (opts) => ipcRenderer.invoke('show-dialog', opts),
+  openExternal:   (url) => ipcRenderer.invoke('open-external', url),
 
   // ── Slot assignment ──
   onVcamSlot:    (cb) => ipcRenderer.on('vcam-slot', (e, slot) => cb(slot)),
   onVcamDllPath: (cb) => ipcRenderer.on('vcam-dll-path', (e, p) => cb(p)),
+  onWindowIndex: (cb) => ipcRenderer.on('window-index', (e, idx) => cb(idx)),
 
   // ── Settings ──
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+
+  // ── License (verified in main process) ──
+  verifyLicenseKey: (key) => ipcRenderer.invoke('license:verify', key),
+  checkLicense:     ()  => ipcRenderer.invoke('license:check'),
+
+  // ── App info ──
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 
 });

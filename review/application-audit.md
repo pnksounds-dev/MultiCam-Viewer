@@ -1,13 +1,71 @@
 # MultiCam Viewer Application Audit
 
-Date: 2026-06-23
+Date: 2026-06-23 (last updated 2026-06-23)
 Scope: Electron desktop application code, renderer UI, camera capture flow, virtual camera flow, packaging configuration, and public release readiness.
+
+## Completed changes since initial audit
+
+The following items from the initial audit have been addressed:
+
+### Security — completed
+
+- **CSP meta tags added** to both `index.html` and `output.html` (Critical #3 / Action #13).
+- **Permission handling restricted** — `setPermissionRequestHandler` and `setPermissionCheckHandler` now only allow `media` and `display-capture`; all other permissions are denied (Critical #3 / Action #3).
+- **Navigation blocking** — `will-navigate` handler prevents navigation away from local `file://` URLs (Security improvement).
+- **`setWindowOpenHandler` validation** — only `output.html` is allowed; all other URLs are denied (Action #12).
+- **IPC input validation** — `isValidSerial()`, `isValidCameraId()`, `isValidWindowTitle()`, resolution format validation, and clamping for move deltas and numeric args (Critical #4 / Action #4).
+- **`open-external` IPC handler** — validates URLs start with `http://` or `https://` before opening in the default browser.
+
+### Settings persistence — completed
+
+- **Full settings persistence implemented** — settings are stored in `settings.json` under `app.getPath('userData')` and loaded on startup (Action #8 / Product upgrade #4).
+- Persisted values include: `showSplash`, `resolution`, `lastDeviceIndex`, `greenscreenEnabled`, `gsThreshold`, `gsGap`, `bgColor`, `exposure`, `contrast`, `saturation`, `licenseKey`, `licensedCameras`.
+- Settings are saved debounced via `saveSettingsDebounced()` on every UI change.
+- Default settings are merged with saved settings on startup so new keys are written without overwriting user values.
+
+### Multi-camera grid — completed (was Phase 3 differentiator)
+
+- **Dynamic CCTV-style camera grid** replacing the old picture-in-picture layout.
+- Supports 1–4 cameras side-by-side with responsive CSS grid layouts.
+- Each camera pane has its own header with a device dropdown and close button.
+- Panes are managed dynamically via `addSecondaryPane()` / `removeSecondaryPane()`.
+- Camera grid layouts: 1 (full), 2 (side-by-side), 3 (one large + two stacked), 4 (2×2 grid).
+
+### Premium license key system — completed (replaces Stripe plan)
+
+- **In-house encrypted license key system** instead of Stripe subscription.
+- `license.js` — client-side AES-256-GCM decryption and verification using Web Crypto API.
+- `license-generator.js` — admin CLI tool to generate encrypted license keys.
+- `licenses.json` — bundled key database that the app verifies against.
+- License activation UI in Settings → Premium License section.
+- Camera count gating: free = 2 cameras, licensed = up to 4 cameras.
+- License key and camera count persisted in settings.
+
+### Settings menu redesign — completed
+
+- Settings panel now fills **92vw × 92vh** (max 1200px wide) instead of fixed 560px.
+- Body uses a responsive CSS grid (`auto-fit, minmax(420px, 1fr)`) for multi-column layout.
+- Internal scrolling within the panel body.
+
+### Virtual camera branding — completed
+
+- UnityCapture driver friendly name changed from "Unity Video Capture" to "MultiCam".
+- Install scripts (`install-vcam.bat`, `install-multiple-devices.bat`) updated for new naming.
+- README and settings text updated to reflect MultiCam branding.
+
+---
+
+## Remaining items (not yet completed)
+
+The findings below have NOT been addressed yet.
 
 ## Executive summary
 
 MultiCam Viewer already has a strong core concept: it detects Android phones through bundled ADB/scrcpy, captures phone camera output, supports UVC cameras, offers a clean OBS output window, and includes a UnityCapture virtual camera registration path. The application is promising for a public Windows release, but it is not yet at peak shipping quality.
 
-The biggest release blockers are packaging completeness, virtual camera implementation reliability, broad Electron permission handling, lack of automated tests/diagnostics, and missing public-release metadata such as app identity, code signing, licensing notices, privacy documentation, and update strategy.
+The biggest remaining release blockers are packaging completeness, virtual camera implementation reliability, lack of automated tests/diagnostics, and missing public-release metadata such as app identity, code signing, licensing notices, privacy documentation, and update strategy.
+
+**Completed since initial audit:** CSP headers, permission restriction, IPC validation, navigation blocking, window-open validation, full settings persistence, multi-camera grid (up to 4 cameras), in-house license key system, settings menu redesign, and virtual camera branding.
 
 ## Current strengths
 
@@ -59,9 +117,11 @@ Recommendation:
 - Include `vcam-native.wasm` in `build.files` if this is the intended implementation.
 - Consider replacing UnityCapture integration with a maintained, signed, app-owned virtual camera driver or an OBS plugin for a more professional release.
 
-### 3. Permission policy is too broad
+### 3. ~~Permission policy is too broad~~ — COMPLETED
 
-`main.js` grants every permission request and every permission check for the app session.
+**Resolved.** `main.js` now uses `setPermissionRequestHandler` and `setPermissionCheckHandler` with an explicit allowlist (`ALLOWED_PERMISSIONS = Set(['media', 'display-capture'])`). All other permissions are denied. Navigation is blocked via `will-navigate` handler. `setWindowOpenHandler` only allows `output.html`.
+
+~~`main.js` grants every permission request and every permission check for the app session.~~
 
 Impact:
 
@@ -75,9 +135,11 @@ Recommendation:
 - Deny everything else by default.
 - Add a security checklist before enabling any web content or links.
 
-### 4. IPC input validation is minimal
+### 4. ~~IPC input validation is minimal~~ — COMPLETED
 
-The preload bridge exposes powerful operations: ADB scanning, scrcpy spawning, virtual camera registration, opening windows, moving windows, and dialogs. Main-process handlers trust renderer-provided values such as `serial`, `cameraId`, `maxSize`, `fps`, `windowTitle`, and output-window move deltas.
+**Resolved.** All IPC handlers now validate inputs: `isValidSerial()` (alphanumeric + `._:-`), `isValidCameraId()` (1-4 digit numeric), `isValidWindowTitle()` (safe charset), resolution format check (`\d{1,4}x\d{1,4}`), and clamping for move deltas and numeric arguments.
+
+~~The preload bridge exposes powerful operations: ADB scanning, scrcpy spawning, virtual camera registration, opening windows, moving windows, and dialogs. Main-process handlers trust renderer-provided values such as `serial`, `cameraId`, `maxSize`, `fps`, `windowTitle`, and output-window move deltas.~~
 
 Impact:
 
@@ -153,9 +215,11 @@ Recommendation:
   - No devices: check cable/developer options.
 - Add a `Restart ADB` button.
 
-### 4. Make camera selection and settings persistent
+### 4. ~~Make camera selection and settings persistent~~ — COMPLETED
 
-Currently preferences are held in memory. Public users expect the app to remember choices.
+**Resolved.** Settings are persisted in `settings.json` under `app.getPath('userData')`. All UI changes save debounced via `saveSettingsDebounced()`. Persisted values: `showSplash`, `resolution`, `lastDeviceIndex`, `greenscreenEnabled`, `gsThreshold`, `gsGap`, `bgColor`, `exposure`, `contrast`, `saturation`, `licenseKey`, `licensedCameras`. Defaults are merged on startup without overwriting user values.
+
+~~Currently preferences are held in memory. Public users expect the app to remember choices.~~
 
 Persist:
 
@@ -219,12 +283,12 @@ Recommendation:
 
 ### Security improvements needed
 
-- Replace blanket permission approval with explicit allowlist.
-- Add IPC schema validation.
-- Add `setWindowOpenHandler` URL validation so only `output.html` can be opened.
-- Add a Content Security Policy to `index.html` and `output.html`.
+- ~~Replace blanket permission approval with explicit allowlist.~~ — **DONE**
+- ~~Add IPC schema validation.~~ — **DONE**
+- ~~Add `setWindowOpenHandler` URL validation so only `output.html` can be opened.~~ — **DONE**
+- ~~Add a Content Security Policy to `index.html` and `output.html`.~~ — **DONE**
 - Avoid loading MediaPipe from CDN in production.
-- Prevent navigation away from local app files.
+- ~~Prevent navigation away from local app files.~~ — **DONE**
 - Sanitize and constrain dialog options exposed through IPC.
 - Remove or gate `console.log`/`console.error` noise in public builds, or route it to a diagnostic log.
 
@@ -361,8 +425,8 @@ Avoid claiming universal support until tested widely. Safer language:
 ### Phase 1: Ship-safe beta
 
 - Bundle all required assets offline.
-- Add strict permission handling.
-- Add IPC validation.
+- ~~Add strict permission handling.~~ — **DONE**
+- ~~Add IPC validation.~~ — **DONE**
 - Add diagnostics export.
 - Add first-run wizard.
 - Fix virtual camera status to distinguish driver registered vs frame writer active.
@@ -373,7 +437,7 @@ Avoid claiming universal support until tested widely. Safer language:
 
 - Code-sign installer and app.
 - Add auto-update.
-- Add settings persistence.
+- ~~Add settings persistence.~~ — **DONE**
 - Add crash/error logging with user consent.
 - Add polished website/landing page.
 - Add video setup tutorials.
@@ -387,33 +451,33 @@ Avoid claiming universal support until tested widely. Safer language:
 - Presets/scenes for background replacement.
 - Phone camera controls where supported: front/back, zoom, exposure, focus.
 - Audio support if valuable.
-- Multi-camera grid/manager view.
+- ~~Multi-camera grid/manager view.~~ — **DONE** (dynamic CCTV grid, up to 4 cameras)
 - Cloud-free privacy badge and privacy-first branding.
 
 ## Top 15 prioritized action items
 
 1. Bundle MediaPipe assets locally and verify packaged green screen works offline.
 2. Confirm whether virtual camera frame writing works; if not, fix or re-label as experimental.
-3. Restrict Electron permission handling to trusted windows and required permissions only.
-4. Add IPC payload validation in `main.js`.
+3. ~~Restrict Electron permission handling to trusted windows and required permissions only.~~ — **DONE**
+4. ~~Add IPC payload validation in `main.js`.~~ — **DONE**
 5. Add a diagnostics/support report screen.
 6. Parse and display ADB unauthorized/offline states.
 7. Add first-run setup wizard.
-8. Persist user settings.
+8. ~~Persist user settings.~~ — **DONE**
 9. Add code signing and publisher metadata.
 10. Add third-party license notices and privacy policy.
 11. Add a real driver uninstall flow.
-12. Add `setWindowOpenHandler` validation for only `output.html`.
-13. Add CSP headers/meta tags for app windows.
+12. ~~Add `setWindowOpenHandler` validation for only `output.html`.~~ — **DONE**
+13. ~~Add CSP headers/meta tags for app windows.~~ — **DONE**
 14. Add automated parser/unit tests and a manual release checklist.
 15. Refactor large files into maintainable modules before adding more features.
 
 ## Overall readiness rating
 
 - Prototype/product concept: 8/10
-- Current user experience: 6.5/10
-- Public EXE readiness: 4.5/10
-- Security posture for public release: 5.5/10
+- Current user experience: 7.5/10 _(was 6.5 — settings persistence, multi-camera grid, settings menu redesign)_
+- Public EXE readiness: 4.5/10 _(unchanged — still needs packaging, code signing, asset bundling)_
+- Security posture for public release: 7.5/10 _(was 5.5 — CSP, permission allowlist, IPC validation, navigation blocking, window-open validation all done)_
 - Maintainability: 5/10
 - Market potential after polish: 8/10
 
