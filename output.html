@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MultiCam Output</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+    #output-video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    #no-output {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      padding: 20px;
+      text-align: center;
+    }
+    .hidden { display: none !important; }
+    #output-cog {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.4;
+      transition: opacity 0.2s;
+    }
+    #output-cog:hover { opacity: 1; }
+    #output-menu {
+      position: absolute;
+      top: 38px;
+      right: 8px;
+      background: rgba(0,0,0,0.85);
+      border-radius: 6px;
+      padding: 6px;
+      z-index: 11;
+      min-width: 160px;
+    }
+    #output-menu button {
+      width: 100%;
+      background: transparent;
+      border: none;
+      color: #fff;
+      padding: 8px 12px;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #output-menu button:hover { background: rgba(255,255,255,0.15); }
+    .menu-section { padding: 4px 0; }
+    .menu-divider {
+      height: 1px;
+      background: rgba(255,255,255,0.15);
+      margin: 6px 0;
+    }
+    .menu-slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #fff;
+      font-size: 12px;
+      padding: 5px 8px;
+      font-family: system-ui, sans-serif;
+    }
+    .menu-slider-wrap label {
+      width: 64px;
+      white-space: nowrap;
+    }
+    .menu-slider-wrap input[type="range"] {
+      flex: 1;
+      min-width: 80px;
+      cursor: pointer;
+    }
+    .menu-slider-wrap span {
+      width: 28px;
+      text-align: right;
+    }
+    #drag-hint {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: rgba(255,255,255,0.15);
+      z-index: 9;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    body:hover #drag-hint { opacity: 1; }
+    body { -webkit-app-region: drag; }
+    #output-cog, #output-menu, #output-menu * { -webkit-app-region: no-drag; }
+  </style>
+</head>
+<body>
+  <div id="drag-hint"></div>
+  <div id="no-output">Waiting for source window…</div>
+  <video id="output-video" autoplay playsinline muted></video>
+  <button id="output-cog" title="Output options">&#9881;</button>
+  <div id="output-menu" class="hidden">
+    <div class="menu-section">
+      <div class="menu-slider-wrap">
+        <label for="out-exposure">Exposure</label>
+        <input type="range" id="out-exposure" min="-100" max="100" value="0">
+        <span id="out-exposure-val">0</span>
+      </div>
+      <div class="menu-slider-wrap">
+        <label for="out-contrast">Contrast</label>
+        <input type="range" id="out-contrast" min="-100" max="100" value="0">
+        <span id="out-contrast-val">0</span>
+      </div>
+      <div class="menu-slider-wrap">
+        <label for="out-saturation">Saturation</label>
+        <input type="range" id="out-saturation" min="-100" max="100" value="0">
+        <span id="out-saturation-val">0</span>
+      </div>
+    </div>
+    <div class="menu-divider"></div>
+    <button id="btn-return-main">Return to main window</button>
+  </div>
+  <script src="output-renderer.js"></script>
+</body>
+</html>

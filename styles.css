@@ -1,0 +1,650 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-dark: #0f0f1a;
+  --bg-card: #1a1a2e;
+  --bg-control: #16213e;
+  --accent: #e94560;
+  --accent2: #0f3460;
+  --text: #e0e0f0;
+  --text-muted: #888aaa;
+  --green: #00d084;
+  --red: #e94560;
+  --gray: #555577;
+  --border: #2a2a4a;
+  --topbar-h: 56px;
+  --status-h: 28px;
+  --footer-h: 36px;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ---- TOP BAR ---- */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  min-height: var(--topbar-h);
+  height: auto;
+  flex-shrink: 0;
+  gap: 12px;
+  -webkit-app-region: drag;
+  flex-wrap: wrap;
+}
+
+#title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+#app-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+}
+
+.badge {
+  background: var(--green);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+}
+
+#device-selector-wrap,
+#resolution-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+select {
+  background: var(--bg-control);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 220px;
+  outline: none;
+}
+
+select:hover, select:focus {
+  border-color: var(--accent);
+}
+
+button {
+  background: var(--bg-control);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+button:hover {
+  background: var(--accent2);
+  border-color: var(--accent);
+}
+
+button:active {
+  opacity: 0.8;
+}
+
+#btn-settings {
+  font-size: 16px;
+  padding: 5px 10px;
+}
+
+#btn-new-window {
+  background: var(--accent2);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---- STATUS BAR ---- */
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #111120;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  height: var(--status-h);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+#fps-display {
+  font-family: monospace;
+  color: var(--green);
+}
+
+#vcam-slot-display {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+/* ---- VIDEO AREA ---- */
+#video-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+}
+
+#camera-video.active {
+  display: block;
+}
+
+#no-camera-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 20px;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  opacity: 0.3;
+  flex-shrink: 0;
+}
+
+#no-cam-heading {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+/* ---- CONNECTION GUIDE ---- */
+#connection-guide {
+  width: 100%;
+  max-width: 560px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.guide-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: #111120;
+}
+
+.guide-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.guide-tab:hover {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.guide-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
+.guide-panel {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-panel.hidden {
+  display: none;
+}
+
+.guide-title {
+  font-size: 12px !important;
+  color: var(--green) !important;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.guide-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.guide-steps li {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.guide-steps li strong {
+  color: var(--text);
+}
+
+.guide-steps ul {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+}
+
+.guide-steps ul li {
+  font-size: 11px;
+}
+
+.guide-note {
+  font-size: 11px !important;
+  color: #776655 !important;
+  background: #1a1510;
+  border: 1px solid #332211;
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin-top: 2px;
+}
+
+/* refresh button */
+#btn-refresh {
+  font-size: 15px;
+  padding: 5px 9px;
+}
+
+/* ---- GREEN SCREEN ---- */
+#greenscreen-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+#btn-greenscreen {
+  background: var(--bg-control);
+  border-color: var(--border);
+}
+
+#btn-greenscreen.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #000;
+  font-weight: 700;
+}
+
+#greenscreen-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: fadeIn 0.15s ease;
+}
+
+#greenscreen-controls.hidden {
+  display: none;
+}
+
+#greenscreen-controls input[type="color"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+#bg-image-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+#bg-image-label:hover {
+  background: var(--accent2);
+  border-color: var(--accent);
+}
+
+#bg-image-label input[type="file"] {
+  display: none;
+}
+
+#btn-clear-bg {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.gs-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.gs-slider-wrap label {
+  width: 54px;
+}
+
+.gs-slider-wrap input[type="range"] {
+  flex: 1;
+  min-width: 70px;
+}
+
+.gs-slider-wrap span {
+  width: 22px;
+  text-align: right;
+}
+
+.settings-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.settings-slider-wrap label {
+  width: 80px;
+  color: var(--text);
+}
+
+.settings-slider-wrap input[type="range"] {
+  flex: 1;
+  min-width: 120px;
+}
+
+.settings-slider-wrap span {
+  width: 28px;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+#vcam-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: none;
+  z-index: 1;
+}
+
+#vcam-canvas.active {
+  display: block;
+}
+
+#camera-video.hidden {
+  display: none !important;
+}
+
+#greenscreen-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ---- FOOTER ---- */
+#vcam-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: 0 16px;
+  height: var(--footer-h);
+  flex-shrink: 0;
+}
+
+#vcam-status-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.dot.green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot.red   { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+.dot.gray  { background: var(--gray); }
+.dot.yellow { background: #f5c518; box-shadow: 0 0 6px #f5c518; }
+
+#btn-install-vcam {
+  font-size: 12px;
+  padding: 4px 12px;
+  background: var(--accent2);
+  border-color: var(--accent);
+}
+
+/* ---- CLEAN MODE (for output window / clean capture) ---- */
+body.clean-mode #topbar,
+body.clean-mode #status-bar,
+body.clean-mode #footer,
+body.clean-mode #greenscreen-badge {
+  display: none !important;
+}
+
+body.clean-mode #app {
+  height: 100vh;
+}
+
+body.clean-mode #video-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+body.clean-mode #camera-video,
+body.clean-mode #vcam-canvas {
+  object-fit: contain;
+}
+
+/* ---- SETTINGS OVERLAY ---- */
+#settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+#settings-overlay.hidden {
+  display: none;
+}
+
+#settings-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+#settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+#settings-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#btn-close-settings {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#btn-close-settings:hover { color: var(--accent); background: transparent; }
+
+#settings-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+#settings-body section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#settings-body h3 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#settings-body p, #settings-body li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+#settings-body ul, #settings-body ol {
+  padding-left: 20px;
+}
+
+#settings-body strong {
+  color: var(--text);
+}
+
+.note {
+  font-size: 12px;
+  color: var(--green) !important;
+}
+
+#settings-body code {
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  background: #0a0a18;
+  color: var(--green);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+#vcam-install-status {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #111120;
+}
+
+.hidden {
+  display: none !important;
+}

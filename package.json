@@ -1,0 +1,53 @@
+{
+  "name": "multi-cam-viewer",
+  "version": "1.0.0",
+  "description": "Multi-phone USB webcam viewer with virtual camera output",
+  "main": "main.js",
+  "scripts": {
+    "start": "set ELECTRON_RUN_AS_NODE=&& node_modules\\electron\\dist\\electron.exe .",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.multicam.viewer",
+    "productName": "MultiCam Viewer",
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "vcam-worker.js",
+      "index.html",
+      "styles.css",
+      "output.html",
+      "output-renderer.js"
+    ],
+    "extraResources": [
+      {
+        "from": "vcam",
+        "to": "vcam"
+      },
+      {
+        "from": "tools",
+        "to": "tools"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@mediapipe/camera_utils": "0.3.1675466862",
+    "@mediapipe/selfie_segmentation": "0.1.1675465747"
+  }
+}

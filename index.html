@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MultiCam Viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar -->
+    <div id="topbar">
+      <div id="title-area">
+        <span id="app-title">MultiCam Viewer</span>
+        <span id="vcam-badge" class="badge hidden">Virtual Cam Active</span>
+      </div>
+      <div id="controls">
+        <div id="device-selector-wrap">
+          <label for="device-select">Camera:</label>
+          <select id="device-select">
+            <option value="">— Select Camera —</option>
+          </select>
+        </div>
+        <div id="resolution-wrap">
+          <label for="res-select">Resolution:</label>
+          <select id="res-select">
+            <option value="1920x1080">1920×1080</option>
+            <option value="1280x720" selected>1280×720</option>
+            <option value="854x480">854×480</option>
+            <option value="640x480">640×480</option>
+          </select>
+        </div>
+        <button id="btn-new-window" title="Open a new camera window for a second phone">+ New Camera</button>
+        <button id="btn-output-window" title="Open a clean output window for OBS window capture">Output Window</button>
+        <div id="greenscreen-wrap">
+          <button id="btn-greenscreen" title="Toggle AI green screen">Green Screen</button>
+          <div id="greenscreen-controls" class="hidden">
+            <input type="color" id="bg-color" value="#00ff00" title="Background color">
+            <label id="bg-image-label" title="Use a background image">
+              <input type="file" id="bg-image" accept="image/*">
+              BG Image
+            </label>
+            <button id="btn-clear-bg" title="Clear background image">&#10005;</button>
+            <div class="gs-slider-wrap" title="Edge threshold">
+              <label>Threshold</label>
+              <input type="range" id="gs-threshold" min="0" max="100" value="50">
+              <span id="gs-threshold-val">50</span>
+            </div>
+            <div class="gs-slider-wrap" title="Gap around the user">
+              <label>Gap</label>
+              <input type="range" id="gs-gap" min="0" max="50" value="0">
+              <span id="gs-gap-val">0</span>
+            </div>
+          </div>
+        </div>
+        <button id="btn-refresh" title="Refresh camera list (F5)">&#8635;</button>
+        <button id="btn-settings" title="Settings &amp; virtual cam">&#9881;</button>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="status-bar">
+      <span id="status-text">No camera selected</span>
+      <span id="fps-display"></span>
+      <span id="vcam-slot-display"></span>
+    </div>
+
+    <!-- Video area -->
+    <div id="video-wrap">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <canvas id="vcam-canvas"></canvas>
+      <span id="greenscreen-badge" class="badge hidden">AI Green Screen</span>
+
+      <!-- Shown when no camera is selected or no cameras found -->
+      <div id="no-camera-msg">
+        <div class="placeholder-icon">&#128241;</div>
+        <p id="no-cam-heading">Plug in your phone (USB debugging on), then pick it above</p>
+
+        <!-- Connection guide — shown when 0 cameras found -->
+        <div id="connection-guide" class="hidden">
+          <div class="guide-tabs">
+            <button class="guide-tab active" data-tab="usb">USB Debugging (Recommended)</button>
+            <button class="guide-tab" data-tab="android14">Android 14+ Native</button>
+          </div>
+
+          <!-- Primary: USB debugging + scrcpy (built in) -->
+          <div class="guide-panel active" id="tab-usb">
+            <p class="guide-title">Direct USB camera — no app on your phone</p>
+            <ol class="guide-steps">
+              <li>Connect your phone with a <strong>data USB cable</strong></li>
+              <li>Enable Developer Options: <strong>Settings → About phone → tap "Build number" 7 times</strong></li>
+              <li>Enable <strong>Settings → System → Developer Options → USB Debugging</strong></li>
+              <li>On the phone popup <em>"Allow USB debugging?"</em> → tap <strong>Allow</strong> (tick "always allow")</li>
+              <li>Click <strong>&#8635; Refresh</strong> above — your phone appears as <em>"📱 [model] — back camera"</em></li>
+              <li>Select it. The first time, watch your phone for a camera permission prompt → <strong>Allow</strong></li>
+            </ol>
+            <p class="guide-note">This uses scrcpy (bundled). A temporary helper is pushed to the phone over USB and removed on disconnect — nothing is permanently installed.</p>
+          </div>
+
+          <!-- Android 14+ native UVC -->
+          <div class="guide-panel hidden" id="tab-android14">
+            <p class="guide-title">Built-in USB Webcam mode (Android 14–16)</p>
+            <ol class="guide-steps">
+              <li>Plug phone into PC with a <strong>data USB cable</strong></li>
+              <li>On phone: pull down the notification shade → tap the <strong>USB</strong> notification</li>
+              <li>Choose <strong>"USB Webcam"</strong> (under "Use USB for")</li>
+              <li>Click <strong>&#8635; Refresh</strong> — phone appears as <em>"🎥 ... Webcam"</em></li>
+            </ol>
+            <p class="guide-note">&#9888; If "USB Webcam" isn't listed, your device doesn't expose it — use the USB Debugging tab instead (works on all Android 12+).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div id="vcam-footer">
+      <div id="vcam-status-wrap">
+        <span id="vcam-dot" class="dot gray"></span>
+        <span id="vcam-status-text">Virtual Camera: checking...</span>
+      </div>
+      <button id="btn-install-vcam" class="hidden">Install Virtual Camera Driver</button>
+    </div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settings-overlay" class="hidden">
+    <div id="settings-panel">
+      <div id="settings-header">
+        <h2>Settings</h2>
+        <button id="btn-close-settings">&#10005;</button>
+      </div>
+      <div id="settings-body">
+        <section>
+          <h3>How phone capture works</h3>
+          <p>This app talks to your phone over <strong>USB debugging (ADB)</strong> and uses bundled <strong>scrcpy</strong> to pull the camera feed directly — no app is installed on your phone. The feed is shown here and pushed to the virtual camera below.</p>
+          <p>Requirements on the phone: Android 12+, <strong>USB Debugging enabled</strong>, and tap <strong>Allow</strong> on the debugging + camera prompts.</p>
+        </section>
+        <section>
+          <h3>Video Adjustments</h3>
+          <div class="settings-slider-wrap">
+            <label>Threshold</label>
+            <input type="range" id="settings-threshold" min="0" max="100" value="50">
+            <span id="settings-threshold-val">50</span>
+          </div>
+          <div class="settings-slider-wrap">
+            <label>Gap</label>
+            <input type="range" id="settings-gap" min="0" max="50" value="0">
+            <span id="settings-gap-val">0</span>
+          </div>
+          <div class="settings-slider-wrap">
+            <label>Exposure</label>
+            <input type="range" id="settings-exposure" min="-100" max="100" value="0">
+            <span id="settings-exposure-val">0</span>
+          </div>
+          <div class="settings-slider-wrap">
+            <label>Contrast</label>
+            <input type="range" id="settings-contrast" min="-100" max="100" value="0">
+            <span id="settings-contrast-val">0</span>
+          </div>
+          <div class="settings-slider-wrap">
+            <label>Saturation</label>
+            <input type="range" id="settings-saturation" min="-100" max="100" value="0">
+            <span id="settings-saturation-val">0</span>
+          </div>
+        </section>
+        <section>
+          <h3>Virtual Camera Driver (UnityCapture)</h3>
+          <p>To output video as a virtual webcam that OBS can detect, the <strong>UnityCapture DirectShow filter</strong> must be registered on your PC.</p>
+          <p>DLL must be in the <code>vcam/</code> folder — accepted filenames:</p>
+          <ul>
+            <li><code>UnityCaptureFilter64.dll</code> &nbsp;<span class="tag-ok">✓ found</span> or <span class="tag-err">✗ missing</span></li>
+          </ul>
+          <p>Clicking Register shows a Windows <strong>UAC admin prompt</strong> — click Yes to allow.</p>
+          <div id="vcam-install-status"></div>
+          <button id="btn-install-vcam-settings">Register Virtual Camera Driver</button>
+          <button id="btn-uninstall-vcam-settings">Unregister Driver</button>
+        </section>
+        <section>
+          <h3>Virtual Camera Slots</h3>
+          <p>Each open window outputs to a different slot in OBS:</p>
+          <ul>
+            <li>Window 1 → <strong>Unity Video Capture</strong></li>
+            <li>Window 2 → <strong>Unity Video Capture 2</strong></li>
+            <li>Window 3 → <strong>Unity Video Capture 3</strong></li>
+          </ul>
+          <p class="note">This window's slot: <strong id="current-slot-display">—</strong></p>
+        </section>
+        <section>
+          <h3>Using with OBS</h3>
+          <ol>
+            <li>Register the driver above and approve the UAC prompt</li>
+            <li>In this app: select your <strong>phone camera</strong> in the dropdown</li>
+            <li>In OBS: Add Source → <strong>Video Capture Device</strong></li>
+            <li>Device: <strong>"Unity Video Capture"</strong> (this window's output)</li>
+            <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"Unity Video Capture 2"</strong></li>
+          </ol>
+        </section>
+        <section>
+          <h3>Window Capture (no driver needed)</h3>
+          <p>Select your phone in the dropdown, then in OBS: Add Source → <strong>Window Capture</strong> → select <em>"MultiCam Viewer"</em>. Open a second app window for the second phone.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="node_modules/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
