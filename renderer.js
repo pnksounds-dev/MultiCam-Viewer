@@ -35,6 +35,7 @@ const vcamInstallStatus  = document.getElementById('vcam-install-status');
 const btnInstallVcamSettings   = document.getElementById('btn-install-vcam-settings');
 const btnUninstallVcamSettings = document.getElementById('btn-uninstall-vcam-settings');
 const currentSlotDisplay = document.getElementById('current-slot-display');
+const settingShowSplash  = document.getElementById('setting-show-splash');
 
 // ─── Green screen DOM refs ──────────────────────────────────────────────────
 const btnGreenscreen     = document.getElementById('btn-greenscreen');
@@ -139,6 +140,14 @@ async function init() {
         lastScrcpyError = data.text.trim().split('\n').filter(Boolean).pop();
       }
     });
+
+    // Load saved settings
+    try {
+      const settings = await window.electronAPI.getSettings();
+      if (settings && typeof settings.showSplash === 'boolean') {
+        settingShowSplash.checked = settings.showSplash;
+      }
+    } catch {}
   }
 
   await refreshSources();
@@ -698,6 +707,10 @@ async function installVcamDriver() {
 // ─── Event Listeners ──────────────────────────────────────────────────────────
 deviceSelect.addEventListener('change', startSelected);
 resSelect.addEventListener('change', () => { if (deviceSelect.value !== '') startSelected(); });
+
+settingShowSplash.addEventListener('change', () => {
+  window.electronAPI?.setSettings({ showSplash: settingShowSplash.checked });
+});
 
 btnNewWindow.addEventListener('click', () => window.electronAPI?.openNewWindow());
 btnOutputWindow.addEventListener('click', () => {

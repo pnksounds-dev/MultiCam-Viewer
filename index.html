@@ -22,6 +22,7 @@
     <!-- Top bar -->
     <div id="topbar">
       <div id="title-area">
+        <img id="header-logo" src="assets/MCVLOGO-header.png" alt="MultiCam Viewer">
         <span id="app-title">MultiCam Viewer</span>
         <span id="vcam-badge" class="badge hidden">Virtual Cam Active</span>
       </div>
@@ -141,6 +142,13 @@
         <button id="btn-close-settings">&#10005;</button>
       </div>
       <div id="settings-body">
+        <section>
+          <h3>General</h3>
+          <label class="settings-check-wrap">
+            <input type="checkbox" id="setting-show-splash" checked>
+            <span>Show splash screen on startup</span>
+          </label>
+        </section>
         <section>
           <h3>How phone capture works</h3>
           <p>This app talks to your phone over <strong>USB debugging (ADB)</strong> and uses bundled <strong>scrcpy</strong> to pull the camera feed directly — no app is installed on your phone. The feed is shown here and pushed to the virtual camera below.</p>

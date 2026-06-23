@@ -62,11 +62,17 @@ html, body {
   flex-shrink: 0;
 }
 
+#header-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
 #app-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0.5px;
+  display: none;
 }
 
 .badge {
@@ -428,6 +434,22 @@ button:active {
   gap: 10px;
   margin-bottom: 8px;
   font-size: 13px;
+}
+
+.settings-check-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-check-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
 }
 
 .settings-slider-wrap label {

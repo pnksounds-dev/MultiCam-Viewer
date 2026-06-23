@@ -3,6 +3,59 @@ const path = require('path');
 const { execSync, execFile, spawn } = require('child_process');
 const fs = require('fs');
 
+// ─── Settings persistence ────────────────────────────────────────────────────
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+
+const DEFAULT_SETTINGS = {
+  showSplash: true,
+};
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }
+  } catch {}
+  return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(settings) {
+  try {
+    const dir = path.dirname(SETTINGS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+  } catch {}
+}
+
+let appSettings = loadSettings();
+
+// ─── Splash Window ───────────────────────────────────────────────────────────
+let splashWindow = null;
+
+function createSplash() {
+  splashWindow = new BrowserWindow({
+    width: 480,
+    height: 420,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    center: true,
+    show: true,
+    backgroundColor: '#0f0f1a',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  splashWindow.loadFile('splash.html');
+
+  splashWindow.on('closed', () => { splashWindow = null; });
+}
+
 // Allow multiple instances of this app simultaneously.
 // NOTE: Do NOT call app.requestSingleInstanceLock() — we want multiple instances.
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
@@ -248,24 +301,21 @@ function registerVcam() {
 }
 
 // ─── Window Factory ──────────────────────────────────────────────────────────
-function createWindow() {
+function createWindow(show = true) {
   const slotIndex = windows.size % 4;
 
   const iconPath = path.join(__dirname, 'assets', 'icon.png');
   const hasIcon = fs.existsSync(iconPath);
-
-  // Offset each new window so two windows don't stack on the exact same spot.
-  const offset = windows.size * 40;
 
   const win = new BrowserWindow({
     width: 960,
     height: 660,
     minWidth: 700,
     minHeight: 480,
-    x: 80 + offset,
-    y: 60 + offset,
+    center: true,
     title: 'MultiCam Viewer',
     backgroundColor: '#0f0f1a',
+    show,
     ...(hasIcon ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -322,9 +372,30 @@ function createWindow() {
     };
   });
 
+  // Offset additional windows from the center so they don't fully overlap.
+  if (windows.size > 0) {
+    const offset = windows.size * 40;
+    const b = win.getBounds();
+    win.setBounds({ x: b.x + offset, y: b.y + offset, width: b.width, height: b.height });
+  }
+
   win.webContents.on('did-finish-load', () => {
     win.webContents.send('vcam-slot', slotIndex);
     win.webContents.send('vcam-dll-path', getVcamDllPath());
+
+    // Close the splash screen once the main window is ready to show.
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      // Small delay so the loading bar animation completes.
+      setTimeout(() => {
+        if (splashWindow && !splashWindow.isDestroyed()) {
+          splashWindow.close();
+          splashWindow = null;
+        }
+        win.show();
+      }, 1800);
+    } else {
+      win.show();
+    }
   });
 
   windows.add(win);
@@ -399,6 +470,15 @@ ipcMain.handle('output:move', async (e, payload) => {
   return { ok: true };
 });
 
+ipcMain.handle('settings:get', async () => appSettings);
+ipcMain.handle('settings:set', async (e, patch) => {
+  if (patch && typeof patch === 'object') {
+    appSettings = { ...appSettings, ...patch };
+    saveSettings(appSettings);
+  }
+  return appSettings;
+});
+
 ipcMain.handle('show-dialog', async (e, opts) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const o = opts || {};
@@ -423,7 +503,21 @@ app.whenReady().then(() => {
   // Start the ADB server in the background so the first phone scan doesn't
   // time out waiting for the daemon to launch (common after a PC reboot).
   spawn(ADB(), ['start-server'], { windowsHide: true, stdio: 'ignore' });
-  createWindow();
+
+  // Re-enable the splash screen if it was previously disabled.
+  if (!appSettings.showSplash) {
+    appSettings.showSplash = true;
+    saveSettings(appSettings);
+  }
+
+  // Show splash screen first (unless disabled in settings).
+  if (appSettings.showSplash) {
+    createSplash();
+  }
+
+  // Hide the main window initially when splash is shown; it will be revealed
+  // after did-finish-load fires and the splash loading bar animation completes.
+  createWindow(!appSettings.showSplash);
 });
 
 app.on('before-quit', stopAllScrcpy);

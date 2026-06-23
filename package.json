@@ -4,7 +4,7 @@
   "description": "Multi-phone USB webcam viewer with virtual camera output",
   "main": "main.js",
   "scripts": {
-    "start": "set ELECTRON_RUN_AS_NODE=&& node_modules\\electron\\dist\\electron.exe .",
+    "start": "wscript dev-launcher.vbs",
     "build": "electron-builder --win --x64",
     "build:dir": "electron-builder --win --x64 --dir"
   },
@@ -27,9 +27,13 @@
       "renderer.js",
       "vcam-worker.js",
       "index.html",
+      "splash.html",
+      "launcher.vbs",
+      "dev-launcher.vbs",
       "styles.css",
       "output.html",
       "output-renderer.js",
+      "assets/**/*",
       "vendor/**/*"
     ],
     "asarUnpack": [
