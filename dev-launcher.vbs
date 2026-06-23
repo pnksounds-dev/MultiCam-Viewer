@@ -7,6 +7,6 @@ Set WshEnv = WshShell.Environment("PROCESS")
 WshEnv.Remove("ELECTRON_RUN_AS_NODE")
 appDir = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\") - 1)
 exePath = appDir & "\node_modules\electron\dist\electron.exe"
-' 0 = hidden window, False = don't wait for app to exit
-WshShell.Run """" & exePath & """ """ & appDir & """", 0, False
+' 1 = normal window, False = don't wait for app to exit
+WshShell.Run """" & exePath & """ """ & appDir & """", 1, False
 Set WshShell = Nothing

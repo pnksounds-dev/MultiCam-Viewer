@@ -33,7 +33,7 @@
 #include <strsafe.h>
 #include <math.h>
 
-#define CaptureSourceName L"Unity Video Capture"
+#define CaptureSourceName L"MultiCam"
 
 //Use separate GUIDs for 64bit and 32bit so both can be installed at the same time
 #ifdef _WIN64

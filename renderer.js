@@ -16,6 +16,10 @@
 const deviceSelect       = document.getElementById('device-select');
 const resSelect          = document.getElementById('res-select');
 const cameraVideo        = document.getElementById('camera-video');
+const videoWrap          = document.getElementById('video-wrap');
+const cameraGrid         = document.getElementById('camera-grid');
+const cameraPaneTemplate = document.getElementById('camera-pane-template');
+const btnClosePane0      = document.getElementById('btn-close-pane-0');
 const noCameraMsg        = document.getElementById('no-camera-msg');
 const statusText         = document.getElementById('status-text');
 const fpsDisplay         = document.getElementById('fps-display');
@@ -25,6 +29,10 @@ const vcamStatusText     = document.getElementById('vcam-status-text');
 const vcamBadge          = document.getElementById('vcam-badge');
 const btnInstallVcam     = document.getElementById('btn-install-vcam');
 const btnNewWindow       = document.getElementById('btn-new-window');
+const btnNewWindowMenu   = document.getElementById('btn-new-window-menu');
+const newCameraDropdown  = document.getElementById('new-camera-dropdown');
+const btnNewSameWindow   = document.getElementById('btn-new-same-window');
+const btnNewSeparate     = document.getElementById('btn-new-separate');
 const btnOutputWindow    = document.getElementById('btn-output-window');
 const btnRefresh         = document.getElementById('btn-refresh');
 const btnSettings        = document.getElementById('btn-settings');
@@ -72,6 +80,11 @@ let vcamCtx          = null;
 let activeScrcpyTitle = null;   // currently running scrcpy window title (if any)
 let sourceOptions    = [];      // metadata for each dropdown option (by value)
 let lastScrcpyError  = '';      // last error line from scrcpy output
+let vcamNativeReady  = false;   // true when the shared-memory frame bridge is active
+
+// ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
+const secondaryPanes = []; // { id, element, select, video, stream, scrcpyTitle }
+let nextPaneId = 1;
 
 // ─── Green screen state ───────────────────────────────────────────────────────
 let greenscreenEnabled = false;
@@ -115,6 +128,52 @@ window.getVideoAdjustment = (name) => {
 };
 window.setVideoAdjustment = setVideoAdjustment;
 
+function applySettings(settings) {
+  if (settings.resolution && resSelect.querySelector(`option[value="${settings.resolution}"]`)) {
+    resSelect.value = settings.resolution;
+  }
+  if (settings.greenscreenEnabled) {
+    greenscreenEnabled = true;
+    btnGreenscreen.classList.add('active');
+    greenscreenControls.classList.remove('hidden');
+    greenscreenBadge.classList.remove('hidden');
+    initSegmentation();
+  }
+  if (typeof settings.gsThreshold === 'number') {
+    gsThresholdValue = settings.gsThreshold;
+    gsThreshold.value = settings.gsThreshold;
+    gsThresholdVal.textContent = String(settings.gsThreshold);
+    stThreshold.value = settings.gsThreshold;
+    stThresholdVal.textContent = String(settings.gsThreshold);
+  }
+  if (typeof settings.gsGap === 'number') {
+    gsGapValue = settings.gsGap;
+    gsGap.value = settings.gsGap;
+    gsGapVal.textContent = String(settings.gsGap);
+    stGap.value = settings.gsGap;
+    stGapVal.textContent = String(settings.gsGap);
+  }
+  if (settings.bgColor) {
+    bgColorValue = settings.bgColor;
+    bgColorInput.value = settings.bgColor;
+  }
+  if (typeof settings.exposure === 'number') setVideoAdjustment('exposure', settings.exposure);
+  if (typeof settings.contrast === 'number') setVideoAdjustment('contrast', settings.contrast);
+  if (typeof settings.saturation === 'number') setVideoAdjustment('saturation', settings.saturation);
+  if (typeof settings.showSplash === 'boolean') {
+    settingShowSplash.checked = settings.showSplash;
+  }
+}
+
+let saveSettingsTimer = null;
+function saveSettingsDebounced(patch) {
+  if (!window.electronAPI) return;
+  if (saveSettingsTimer) clearTimeout(saveSettingsTimer);
+  saveSettingsTimer = setTimeout(() => {
+    window.electronAPI.setSettings(patch);
+  }, 150);
+}
+
 // ─── Startup ──────────────────────────────────────────────────────────────────
 async function init() {
   if (window.electronAPI) {
@@ -144,13 +203,20 @@ async function init() {
     // Load saved settings
     try {
       const settings = await window.electronAPI.getSettings();
-      if (settings && typeof settings.showSplash === 'boolean') {
-        settingShowSplash.checked = settings.showSplash;
-      }
+      if (settings) applySettings(settings);
     } catch {}
   }
 
   await refreshSources();
+  // If a last device was saved and still exists in the dropdown, select it.
+  try {
+    const settings = await window.electronAPI.getSettings();
+    if (settings && settings.lastDeviceIndex !== '' &&
+        [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
+      deviceSelect.value = String(settings.lastDeviceIndex);
+      startSelected();
+    }
+  } catch {}
   await checkVirtualCameraDriver();
 
   // Auto-refresh when a UVC device is plugged/unplugged
@@ -190,10 +256,15 @@ async function refreshSources() {
 
   // 1) Phones over USB (ADB)
   let phones = [];
+  let adbIssues = [];
   if (window.electronAPI) {
     const res = await window.electronAPI.listPhones();
-    if (res.ok) phones = res.phones;
-    else statusText.textContent = 'ADB error: ' + (res.error || 'unknown');
+    if (res.ok) {
+      phones = res.phones || [];
+      adbIssues = res.issues || [];
+    } else {
+      statusText.textContent = 'ADB error: ' + (res.error || 'unknown');
+    }
   }
 
   // For each phone, list its cameras
@@ -232,7 +303,7 @@ async function refreshSources() {
         });
   } catch { /* camera privacy may block this; phones still work */ }
 
-  // Rebuild dropdown
+  // Rebuild main camera dropdown
   const prevValue = deviceSelect.value;
   while (deviceSelect.options.length > 1) deviceSelect.remove(1);
   sourceOptions.forEach((opt, i) => {
@@ -246,14 +317,25 @@ async function refreshSources() {
     deviceSelect.value = prevValue;
   }
 
+  // Rebuild every secondary pane's camera dropdown
+  secondaryPanes.forEach(pane => populatePaneSelect(pane.select));
+
   if (sourceOptions.length === 0) {
-    statusText.textContent = 'No phones or cameras found — see guide below';
-    showConnectionGuide();
+    if (adbIssues.length) {
+      statusText.textContent = adbIssues[0].message;
+      showConnectionGuide();
+    } else {
+      statusText.textContent = 'No phones or cameras found — see guide below';
+      showConnectionGuide();
+    }
   } else {
     const nPhones = sourceOptions.filter(s => s.kind === 'phone').length;
-    statusText.textContent = nPhones
+    const countMsg = nPhones
       ? `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`
       : `${sourceOptions.length} camera${sourceOptions.length > 1 ? 's' : ''} detected`;
+    statusText.textContent = adbIssues.length
+      ? `${countMsg} · ${adbIssues[0].message}`
+      : countMsg;
     hideConnectionGuide();
   }
 }
@@ -285,7 +367,7 @@ async function startSelected() {
 
 // ── Phone camera via scrcpy + desktop capture ──
 async function startPhoneCamera(opt) {
-  const maxSize = phoneMaxSize();
+  const resolution = resSelect.value || '1280x720';
   const windowTitle = `MultiCamCap_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
   activeScrcpyTitle = windowTitle;
   lastScrcpyError = '';
@@ -295,7 +377,7 @@ async function startPhoneCamera(opt) {
   const start = await window.electronAPI.startScrcpy({
     serial: opt.serial,
     cameraId: opt.cameraId,
-    maxSize,
+    resolution,
     fps: 30,
     windowTitle,
   });
@@ -340,13 +422,6 @@ async function startPhoneCamera(opt) {
       }
     }
   }
-}
-
-function phoneMaxSize() {
-  // Map resolution dropdown to scrcpy --max-size (largest dimension).
-  const v = resSelect.value || '1280x720';
-  const w = parseInt(v.split('x')[0], 10);
-  return isNaN(w) ? 1280 : w;
 }
 
 async function waitForCaptureWindow(title, timeoutMs) {
@@ -415,6 +490,183 @@ function stopCamera() {
   updateGreenscreenUI();
 }
 
+// ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
+function getSecondaryPane(id) {
+  return secondaryPanes.find(p => p.id === id);
+}
+
+function populatePaneSelect(select) {
+  const prevValue = select.value;
+  while (select.options.length > 1) select.remove(1);
+  sourceOptions.forEach((opt, i) => {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = opt.label;
+    select.appendChild(o);
+  });
+  if (prevValue && [...select.options].some(o => o.value === prevValue)) {
+    select.value = prevValue;
+  }
+}
+
+function updateCameraGrid() {
+  const count = 1 + secondaryPanes.length;
+  cameraGrid.className = 'camera-grid grid-' + Math.min(count, 4);
+}
+
+function addSecondaryPane() {
+  newCameraDropdown.classList.add('hidden');
+  const total = 1 + secondaryPanes.length;
+  if (total >= 4) {
+    statusText.textContent = 'Maximum 4 cameras per window reached';
+    return;
+  }
+
+  const id = nextPaneId++;
+  const clone = cameraPaneTemplate.content.cloneNode(true);
+  const pane = clone.querySelector('.camera-pane');
+  pane.dataset.pane = String(id);
+  pane.id = 'camera-pane-' + id;
+  const select = pane.querySelector('.camera-pane-select');
+  select.id = 'device-select-' + id;
+  const video = pane.querySelector('video');
+  video.id = 'camera-video-' + id;
+  const closeBtn = pane.querySelector('.btn-close-pane');
+  closeBtn.id = 'btn-close-pane-' + id;
+
+  populatePaneSelect(select);
+  select.value = '';
+  select.addEventListener('change', () => startSecondaryPaneCamera(id));
+  closeBtn.addEventListener('click', () => removeSecondaryPane(id));
+
+  cameraGrid.appendChild(pane);
+  secondaryPanes.push({ id, element: pane, select, video, stream: null, scrcpyTitle: null });
+  updateCameraGrid();
+  statusText.textContent = 'Select a camera for the new pane';
+}
+
+function removeSecondaryPane(id) {
+  const pane = getSecondaryPane(id);
+  if (!pane) return;
+  stopSecondaryPaneCamera(id);
+  pane.element.remove();
+  const idx = secondaryPanes.findIndex(p => p.id === id);
+  if (idx !== -1) secondaryPanes.splice(idx, 1);
+  updateCameraGrid();
+}
+
+function startSecondaryPaneCamera(id) {
+  const pane = getSecondaryPane(id);
+  if (!pane) return;
+  const idx = pane.select.value;
+  if (idx === '' || idx === null) { stopSecondaryPaneCamera(id); return; }
+  const opt = sourceOptions[Number(idx)];
+  if (!opt) return;
+
+  stopSecondaryPaneCamera(id);
+
+  if (opt.kind === 'phone') {
+    startSecondaryPhoneCamera(pane, opt);
+  } else {
+    startSecondaryUvcCamera(pane, opt);
+  }
+}
+
+async function startSecondaryPhoneCamera(pane, opt) {
+  const resolution = resSelect.value || '1280x720';
+  const windowTitle = `MultiCamCap${pane.id}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
+  pane.scrcpyTitle = windowTitle;
+
+  const start = await window.electronAPI.startScrcpy({
+    serial: opt.serial,
+    cameraId: opt.cameraId,
+    resolution,
+    fps: 30,
+    windowTitle,
+  });
+
+  if (!start.ok) {
+    statusText.textContent = `Camera ${pane.id} failed: ` + (start.error || 'unknown');
+    pane.scrcpyTitle = null;
+    return;
+  }
+
+  const found = await waitForCaptureWindow(windowTitle, 15000);
+  if (pane.scrcpyTitle !== windowTitle) return;
+  if (!found) {
+    statusText.textContent = `Camera ${pane.id} window did not appear`;
+    return;
+  }
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      pane.stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: found,
+            maxFrameRate: 60,
+          },
+        },
+      });
+      pane.video.srcObject = pane.stream;
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        statusText.textContent = `Camera ${pane.id} capture error: ` + err.message;
+      } else {
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+  }
+}
+
+async function startSecondaryUvcCamera(pane, opt) {
+  const [w, h] = (resSelect.value || '1280x720').split('x').map(Number);
+  try {
+    pane.stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        deviceId: { exact: opt.deviceId },
+        width:  { ideal: w },
+        height: { ideal: h },
+        frameRate: { ideal: 60, max: 60 },
+      },
+    });
+    pane.video.srcObject = pane.stream;
+  } catch (err) {
+    statusText.textContent = `Camera ${pane.id} error: ` + err.message;
+  }
+}
+
+function stopSecondaryPaneCamera(id) {
+  const pane = getSecondaryPane(id);
+  if (!pane) return;
+  if (pane.stream) {
+    pane.stream.getTracks().forEach(t => t.stop());
+    pane.stream = null;
+  }
+  if (pane.scrcpyTitle && window.electronAPI) {
+    window.electronAPI.stopScrcpy(pane.scrcpyTitle);
+    pane.scrcpyTitle = null;
+  }
+  pane.video.srcObject = null;
+}
+
+function closeAllSecondaryPanes() {
+  [...secondaryPanes].forEach(p => removeSecondaryPane(p.id));
+}
+
+function toggleNewCameraDropdown() {
+  newCameraDropdown.classList.toggle('hidden');
+}
+
+function openNewCameraSeparate() {
+  newCameraDropdown.classList.add('hidden');
+  window.electronAPI?.openNewWindow();
+}
+
 // ─── FPS Counter ──────────────────────────────────────────────────────────────
 function startFpsCounter() {
   fpsFrameCount = 0;
@@ -454,16 +706,29 @@ function startVcamOutput() {
       vcamWorker.onmessage = (e) => {
         const m = e.data;
         if (m.type === 'ready') {
-          if (m.nativeAvailable) {
+          vcamNativeReady = !!m.nativeAvailable;
+          if (vcamNativeReady) {
             vcamBadge.classList.remove('hidden');
             setVcamStatus('green', `Virtual Camera active — ${slotLabel(vcamSlot)}`);
+          } else {
+            vcamBadge.classList.add('hidden');
+            setVcamStatus('yellow', 'Driver registered but frame bridge missing — use OBS Window Capture');
           }
           startFrameLoop(w, h);
         } else if (m.type === 'error') {
+          vcamNativeReady = false;
+          vcamBadge.classList.add('hidden');
           setVcamStatus('yellow', 'Virtual cam frame error — use Window Capture in OBS');
+        } else if (m.type === 'info') {
+          // Log info from worker for debugging
+          console.log('[vcam-worker]', m.message);
         }
       };
-      vcamWorker.onerror = () => setVcamStatus('yellow', 'Virtual cam worker error');
+      vcamWorker.onerror = () => {
+        vcamNativeReady = false;
+        vcamBadge.classList.add('hidden');
+        setVcamStatus('yellow', 'Virtual cam worker error — use Window Capture in OBS');
+      };
       vcamWorker.postMessage({ type: 'init', slot: vcamSlot, width: w, height: h });
     } catch { /* window capture still works */ }
   } else {
@@ -524,6 +789,7 @@ function stopVcamOutput() {
   if (vcamAnimFrame) { cancelAnimationFrame(vcamAnimFrame); vcamAnimFrame = null; }
   if (vcamWorker)    { vcamWorker.postMessage({ type: 'stop' }); vcamWorker.terminate(); vcamWorker = null; }
   vcamCtx = null;
+  vcamNativeReady = false;
   vcamBadge.classList.add('hidden');
 }
 
@@ -661,9 +927,9 @@ async function checkVirtualCameraDriver() {
     const installed = await window.electronAPI.checkVcam();
     if (installed) {
       vcamDriverReady = true;
-      setVcamStatus('green', 'Virtual Camera driver ready');
+      setVcamStatus('yellow', 'Driver registered — start a camera to test the frame bridge');
       btnInstallVcam.classList.add('hidden');
-      vcamInstallStatus.textContent = '✓ Driver is registered and ready.';
+      vcamInstallStatus.textContent = '✓ Driver registered. In OBS use Window Capture (recommended) or look for "MultiCam" / "Unity Video Capture".';
       vcamInstallStatus.style.color = 'var(--green)';
       if (currentStream) startVcamOutput();
     } else {
@@ -693,7 +959,7 @@ async function installVcamDriver() {
     vcamDriverReady = true;
     setVcamStatus('green', 'Virtual Camera driver registered');
     btnInstallVcam.classList.add('hidden');
-    vcamInstallStatus.textContent = '✓ Registered! Restart OBS to see "Unity Video Capture".';
+    vcamInstallStatus.textContent = '✓ Registered! Restart OBS. Use Window Capture (recommended) or look for "MultiCam" / "Unity Video Capture".';
     vcamInstallStatus.style.color = 'var(--green)';
     if (currentStream) startVcamOutput();
   } else {
@@ -705,14 +971,41 @@ async function installVcamDriver() {
 }
 
 // ─── Event Listeners ──────────────────────────────────────────────────────────
-deviceSelect.addEventListener('change', startSelected);
-resSelect.addEventListener('change', () => { if (deviceSelect.value !== '') startSelected(); });
+deviceSelect.addEventListener('change', () => {
+  saveSettingsDebounced({ lastDeviceIndex: deviceSelect.value });
+  startSelected();
+});
+resSelect.addEventListener('change', () => {
+  saveSettingsDebounced({ resolution: resSelect.value });
+  if (deviceSelect.value !== '') startSelected();
+});
 
 settingShowSplash.addEventListener('change', () => {
-  window.electronAPI?.setSettings({ showSplash: settingShowSplash.checked });
+  saveSettingsDebounced({ showSplash: settingShowSplash.checked });
 });
 
 btnNewWindow.addEventListener('click', () => window.electronAPI?.openNewWindow());
+btnNewWindowMenu.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleNewCameraDropdown();
+});
+btnNewSameWindow.addEventListener('click', (e) => {
+  e.stopPropagation();
+  addSecondaryPane();
+});
+btnNewSeparate.addEventListener('click', (e) => {
+  e.stopPropagation();
+  openNewCameraSeparate();
+});
+
+btnClosePane0.addEventListener('click', () => {
+  stopSelected();
+  closeAllSecondaryPanes();
+});
+
+// Close the new-camera dropdown when clicking anywhere else.
+document.addEventListener('click', () => newCameraDropdown.classList.add('hidden'));
+
 btnOutputWindow.addEventListener('click', () => {
   if (outputWindow && !outputWindow.closed) {
     outputWindow.focus();
@@ -744,10 +1037,14 @@ btnUninstallVcamSettings.addEventListener('click', () => {
 });
 
 // Green screen controls
-btnGreenscreen.addEventListener('click', toggleGreenscreen);
+btnGreenscreen.addEventListener('click', () => {
+  toggleGreenscreen();
+  saveSettingsDebounced({ greenscreenEnabled: greenscreenEnabled });
+});
 
 bgColorInput.addEventListener('input', (e) => {
   bgColorValue = e.target.value;
+  saveSettingsDebounced({ bgColor: bgColorValue });
 });
 
 bgImageInput.addEventListener('change', (e) => {
@@ -786,24 +1083,37 @@ function bindSlider(input, valueEl, stateVar, onChange) {
 bindSlider(gsThreshold, gsThresholdVal, 'gsThresholdValue', (val) => {
   gsThresholdValue = val;
   syncSlider(stThreshold, stThresholdVal, val);
+  saveSettingsDebounced({ gsThreshold: val });
 });
 bindSlider(stThreshold, stThresholdVal, 'gsThresholdValue', (val) => {
   gsThresholdValue = val;
   syncSlider(gsThreshold, gsThresholdVal, val);
+  saveSettingsDebounced({ gsThreshold: val });
 });
 
 bindSlider(gsGap, gsGapVal, 'gsGapValue', (val) => {
   gsGapValue = val;
   syncSlider(stGap, stGapVal, val);
+  saveSettingsDebounced({ gsGap: val });
 });
 bindSlider(stGap, stGapVal, 'gsGapValue', (val) => {
   gsGapValue = val;
   syncSlider(gsGap, gsGapVal, val);
+  saveSettingsDebounced({ gsGap: val });
 });
 
-bindSlider(stExposure, stExposureVal, 'gsExposureValue', (val) => setVideoAdjustment('exposure', val));
-bindSlider(stContrast, stContrastVal, 'gsContrastValue', (val) => setVideoAdjustment('contrast', val));
-bindSlider(stSaturation, stSaturationVal, 'gsSaturationValue', (val) => setVideoAdjustment('saturation', val));
+bindSlider(stExposure, stExposureVal, 'gsExposureValue', (val) => {
+  setVideoAdjustment('exposure', val);
+  saveSettingsDebounced({ exposure: val });
+});
+bindSlider(stContrast, stContrastVal, 'gsContrastValue', (val) => {
+  setVideoAdjustment('contrast', val);
+  saveSettingsDebounced({ contrast: val });
+});
+bindSlider(stSaturation, stSaturationVal, 'gsSaturationValue', (val) => {
+  setVideoAdjustment('saturation', val);
+  saveSettingsDebounced({ saturation: val });
+});
 
 // Guide tabs
 document.querySelectorAll('.guide-tab').forEach(tab => {

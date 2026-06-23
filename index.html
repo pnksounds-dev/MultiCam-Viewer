@@ -13,6 +13,8 @@
     worker-src 'self' blob:;
     object-src 'none';
     base-uri 'self';
+    form-action 'none';
+    frame-ancestors 'none';
   " />
   <title>MultiCam Viewer</title>
   <link rel="stylesheet" href="styles.css" />
@@ -27,22 +29,28 @@
         <span id="vcam-badge" class="badge hidden">Virtual Cam Active</span>
       </div>
       <div id="controls">
-        <div id="device-selector-wrap">
-          <label for="device-select">Camera:</label>
-          <select id="device-select">
-            <option value="">— Select Camera —</option>
-          </select>
-        </div>
         <div id="resolution-wrap">
           <label for="res-select">Resolution:</label>
           <select id="res-select">
-            <option value="1920x1080">1920×1080</option>
-            <option value="1280x720" selected>1280×720</option>
-            <option value="854x480">854×480</option>
-            <option value="640x480">640×480</option>
+            <option value="1920x1080">1920×1080 · 16:9</option>
+            <option value="1280x720" selected>1280×720 · 16:9</option>
+            <option value="854x480">854×480 · 16:9</option>
+            <option value="640x360">640×360 · 16:9</option>
+            <option value="1080x1920">1080×1920 · 9:16</option>
+            <option value="720x1280">720×1280 · 9:16</option>
+            <option value="1080x1080">1080×1080 · 1:1</option>
+            <option value="720x720">720×720 · 1:1</option>
+            <option value="640x480">640×480 · 4:3</option>
           </select>
         </div>
-        <button id="btn-new-window" title="Open a new camera window for a second phone">+ New Camera</button>
+        <div class="split-button" id="new-camera-split">
+          <button id="btn-new-window" title="Open a new camera window for a second phone">+ New Camera</button>
+          <button id="btn-new-window-menu" title="Camera window options">▼</button>
+          <div class="split-dropdown hidden" id="new-camera-dropdown">
+            <button id="btn-new-same-window" title="Add a second camera inside this window">Add in this window</button>
+            <button id="btn-new-separate" title="Open a separate MultiCam window">Open new MultiCam</button>
+          </div>
+        </div>
         <button id="btn-output-window" title="Open a clean output window for OBS window capture">Output Window</button>
         <div id="greenscreen-wrap">
           <button id="btn-greenscreen" title="Toggle AI green screen">Green Screen</button>
@@ -79,49 +87,77 @@
 
     <!-- Video area -->
     <div id="video-wrap">
-      <video id="camera-video" autoplay playsinline muted></video>
-      <canvas id="vcam-canvas"></canvas>
-      <span id="greenscreen-badge" class="badge hidden">AI Green Screen</span>
-
-      <!-- Shown when no camera is selected or no cameras found -->
-      <div id="no-camera-msg">
-        <div class="placeholder-icon">&#128241;</div>
-        <p id="no-cam-heading">Plug in your phone (USB debugging on), then pick it above</p>
-
-        <!-- Connection guide — shown when 0 cameras found -->
-        <div id="connection-guide" class="hidden">
-          <div class="guide-tabs">
-            <button class="guide-tab active" data-tab="usb">USB Debugging (Recommended)</button>
-            <button class="guide-tab" data-tab="android14">Android 14+ Native</button>
+      <div id="camera-grid" class="camera-grid grid-1">
+        <!-- Main (first) camera pane -->
+        <div id="camera-pane-0" class="camera-pane main-pane" data-pane="0">
+          <div class="camera-pane-header">
+            <select id="device-select" class="camera-pane-select">
+              <option value="">— Camera —</option>
+            </select>
+            <button id="btn-close-pane-0" class="btn-close-pane" title="Close main camera">&#10005;</button>
           </div>
+          <div class="camera-pane-body">
+            <video id="camera-video" autoplay playsinline muted></video>
+            <canvas id="vcam-canvas"></canvas>
+            <span id="greenscreen-badge" class="badge hidden">AI Green Screen</span>
 
-          <!-- Primary: USB debugging + scrcpy (built in) -->
-          <div class="guide-panel active" id="tab-usb">
-            <p class="guide-title">Direct USB camera — no app on your phone</p>
-            <ol class="guide-steps">
-              <li>Connect your phone with a <strong>data USB cable</strong></li>
-              <li>Enable Developer Options: <strong>Settings → About phone → tap "Build number" 7 times</strong></li>
-              <li>Enable <strong>Settings → System → Developer Options → USB Debugging</strong></li>
-              <li>On the phone popup <em>"Allow USB debugging?"</em> → tap <strong>Allow</strong> (tick "always allow")</li>
-              <li>Click <strong>&#8635; Refresh</strong> above — your phone appears as <em>"📱 [model] — back camera"</em></li>
-              <li>Select it. The first time, watch your phone for a camera permission prompt → <strong>Allow</strong></li>
-            </ol>
-            <p class="guide-note">This uses scrcpy (bundled). A temporary helper is pushed to the phone over USB and removed on disconnect — nothing is permanently installed.</p>
-          </div>
+            <!-- Shown when no camera is selected or no cameras found -->
+            <div id="no-camera-msg">
+              <img id="no-cam-logo" src="assets/MCVLOGO1.png?v=2" alt="MultiCam Viewer">
+              <p id="no-cam-heading">Plug in your phone (USB debugging on), then pick it above</p>
 
-          <!-- Android 14+ native UVC -->
-          <div class="guide-panel hidden" id="tab-android14">
-            <p class="guide-title">Built-in USB Webcam mode (Android 14–16)</p>
-            <ol class="guide-steps">
-              <li>Plug phone into PC with a <strong>data USB cable</strong></li>
-              <li>On phone: pull down the notification shade → tap the <strong>USB</strong> notification</li>
-              <li>Choose <strong>"USB Webcam"</strong> (under "Use USB for")</li>
-              <li>Click <strong>&#8635; Refresh</strong> — phone appears as <em>"🎥 ... Webcam"</em></li>
-            </ol>
-            <p class="guide-note">&#9888; If "USB Webcam" isn't listed, your device doesn't expose it — use the USB Debugging tab instead (works on all Android 12+).</p>
+              <!-- Connection guide — shown when 0 cameras found -->
+              <div id="connection-guide" class="hidden">
+                <div class="guide-tabs">
+                  <button class="guide-tab active" data-tab="usb">USB Debugging (Recommended)</button>
+                  <button class="guide-tab" data-tab="android14">Android 14+ Native</button>
+                </div>
+
+                <!-- Primary: USB debugging + scrcpy (built in) -->
+                <div class="guide-panel active" id="tab-usb">
+                  <p class="guide-title">Direct USB camera — no app on your phone</p>
+                  <ol class="guide-steps">
+                    <li>Connect your phone with a <strong>data USB cable</strong></li>
+                    <li>Enable Developer Options: <strong>Settings → About phone → tap "Build number" 7 times</strong></li>
+                    <li>Enable <strong>Settings → System → Developer Options → USB Debugging</strong></li>
+                    <li>On the phone popup <em>"Allow USB debugging?"</em> → tap <strong>Allow</strong> (tick "always allow")</li>
+                    <li>Click <strong>&#8635; Refresh</strong> above — your phone appears as <em>"📱 [model] — back camera"</em></li>
+                    <li>Select it. The first time, watch your phone for a camera permission prompt → <strong>Allow</strong></li>
+                  </ol>
+                  <p class="guide-note">This uses scrcpy (bundled). A temporary helper is pushed to the phone over USB and removed on disconnect — nothing is permanently installed.</p>
+                </div>
+
+                <!-- Android 14+ native UVC -->
+                <div class="guide-panel hidden" id="tab-android14">
+                  <p class="guide-title">Built-in USB Webcam mode (Android 14–16)</p>
+                  <ol class="guide-steps">
+                    <li>Plug phone into PC with a <strong>data USB cable</strong></li>
+                    <li>On phone: pull down the notification shade → tap the <strong>USB</strong> notification</li>
+                    <li>Choose <strong>"USB Webcam"</strong> (under "Use USB for")</li>
+                    <li>Click <strong>&#8635; Refresh</strong> — phone appears as <em>"🎥 ... Webcam"</em></li>
+                  </ol>
+                  <p class="guide-note">&#9888; If "USB Webcam" isn't listed, your device doesn't expose it — use the USB Debugging tab instead (works on all Android 12+).</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Template for additional camera panes (cloned by JS) -->
+      <template id="camera-pane-template">
+        <div class="camera-pane secondary-pane" data-pane="">
+          <div class="camera-pane-header">
+            <select class="camera-pane-select">
+              <option value="">— Camera —</option>
+            </select>
+            <button class="btn-close-pane" title="Close this camera">&#10005;</button>
+          </div>
+          <div class="camera-pane-body">
+            <video autoplay playsinline muted></video>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Footer -->
@@ -198,20 +234,22 @@
           <h3>Virtual Camera Slots</h3>
           <p>Each open window outputs to a different slot in OBS:</p>
           <ul>
-            <li>Window 1 → <strong>Unity Video Capture</strong></li>
-            <li>Window 2 → <strong>Unity Video Capture 2</strong></li>
-            <li>Window 3 → <strong>Unity Video Capture 3</strong></li>
+            <li>Window 1 → <strong>MultiCam</strong> (or "Unity Video Capture" if using the original DLL)</li>
+            <li>Window 2 → <strong>MultiCam 2</strong></li>
+            <li>Window 3 → <strong>MultiCam 3</strong></li>
           </ul>
           <p class="note">This window's slot: <strong id="current-slot-display">—</strong></p>
+          <p class="note"><strong>Recommended:</strong> OBS Window Capture is more reliable because it does not need the native frame bridge.</p>
         </section>
         <section>
           <h3>Using with OBS</h3>
           <ol>
-            <li>Register the driver above and approve the UAC prompt</li>
+            <li>Recommended — no driver needed: Add Source → <strong>Window Capture</strong> → select <em>"MultiCam Viewer"</em></li>
+            <li>Alternative — register the driver above and approve the UAC prompt</li>
             <li>In this app: select your <strong>phone camera</strong> in the dropdown</li>
             <li>In OBS: Add Source → <strong>Video Capture Device</strong></li>
-            <li>Device: <strong>"Unity Video Capture"</strong> (this window's output)</li>
-            <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"Unity Video Capture 2"</strong></li>
+            <li>Device: <strong>"MultiCam"</strong> (or "Unity Video Capture" if using the original DLL)</li>
+            <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"MultiCam 2"</strong></li>
           </ol>
         </section>
         <section>
