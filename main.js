@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session } = require('electron');
 const path = require('path');
 const { execSync, execFile, spawn } = require('child_process');
 const fs = require('fs');
@@ -51,7 +51,7 @@ function createSplash() {
     },
   });
 
-  splashWindow.loadFile('splash.html');
+  splashWindow.loadFile(path.join(__dirname, 'splash.html'));
 
   splashWindow.on('closed', () => { splashWindow = null; });
 }
@@ -342,7 +342,7 @@ function createWindow(show = true) {
     if (!url.startsWith('file://')) event.preventDefault();
   });
 
-  win.loadFile('index.html');
+  win.loadFile(path.join(__dirname, 'index.html'));
 
   // Make the output window (opened via window.open from the renderer) borderless
   // so the whole body can be used to drag it. Only allow opening the local
@@ -499,7 +499,11 @@ ipcMain.handle('show-dialog', async (e, opts) => {
 });
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Clear the disk cache so updated image assets (logo, splash) are always
+  // loaded fresh instead of served from an old cache.
+  await session.defaultSession.clearCache();
+
   // Start the ADB server in the background so the first phone scan doesn't
   // time out waiting for the daemon to launch (common after a PC reboot).
   spawn(ADB(), ['start-server'], { windowsHide: true, stdio: 'ignore' });
