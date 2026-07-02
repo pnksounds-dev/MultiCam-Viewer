@@ -136,12 +136,12 @@ multi-cam-viewer/
 ├── output.html          # Clean output window for OBS Window Capture
 ├── output-renderer.js   # Output window logic
 ├── splash.html          # Startup splash screen
-├── license.js           # Legacy renderer-side license verification (unused in builds)
 ├── license-generator.js # CLI tool to generate license keys
 ├── licenses.json        # License key database
 ├── obfuscate.js         # Build-time JS obfuscation script
 ├── flip-fuses.js        # Electron fuses configuration script
-├── vcam-worker.js       # Virtual camera worker
+├── lib/                 # Pure, unit-tested helpers (ADB/scrcpy parsers, validators)
+├── test/                # node:test unit tests (run with `npm test`)
 ├── installer.nsh        # NSIS installer custom script
 ├── launcher.vbs         # Production launcher (clears ELECTRON_RUN_AS_NODE)
 ├── dev-launcher.vbs     # Dev launcher

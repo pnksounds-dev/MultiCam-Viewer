@@ -1,8 +1,17 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
 const path = require('path');
 const { execSync, execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
+const {
+  parseAdbDevices,
+  parseScrcpyCameras,
+  clampInt,
+  isValidSerial,
+  isValidCameraId,
+  isValidWindowTitle,
+  isValidResolution,
+} = require('./lib/parsers');
 
 // ─── Settings persistence ────────────────────────────────────────────────────
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -187,26 +196,9 @@ const scrcpyProcs = new Map();
 // spawning or window operations.
 const ALLOWED_PERMISSIONS = new Set(['media', 'display-capture']);
 
-function clampInt(value, min, max, fallback) {
-  const n = Number.parseInt(value, 10);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
-}
-
-// ADB serials: alphanumeric, dot, colon, dash, underscore (covers USB serials
-// and ip:port transport ids). Reject anything else to avoid argument injection.
-function isValidSerial(serial) {
-  return typeof serial === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(serial);
-}
-
-function isValidCameraId(id) {
-  return /^\d{1,4}$/.test(String(id));
-}
-
-// scrcpy window titles are app-generated; keep them to a safe character set.
-function isValidWindowTitle(title) {
-  return typeof title === 'string' && /^[A-Za-z0-9 _.:#-]{1,128}$/.test(title);
-}
+// Input validation/clamping helpers (clampInt, isValidSerial, isValidCameraId,
+// isValidWindowTitle, isValidResolution) now live in ./lib/parsers and are
+// imported at the top of this file so they can be unit-tested in isolation.
 
 // ─── Paths ─────────────────────────────────────────────────────────────────
 function getResourcesPath() {
@@ -233,47 +225,17 @@ function getVcamDllPath() {
 }
 
 // ─── ADB: list connected phones ───────────────────────────────────────────────
-function adbIssueMessage(state) {
-  switch (state) {
-    case 'unauthorized':
-      return 'Unlock your phone and tap "Allow" on the USB debugging prompt.';
-    case 'offline':
-      return 'Device is offline — reconnect the USB cable or press ↻ Refresh.';
-    case 'recovery':
-    case 'bootloader':
-      return 'Phone is in recovery/bootloader mode — reboot to normal mode.';
-    default:
-      return 'Phone not ready — check USB debugging is enabled.';
-  }
-}
-
-function listPhones() {
+// Parsing of `adb devices -l` and `scrcpy --list-cameras` output lives in
+// ./lib/parsers (parseAdbDevices / parseScrcpyCameras) so it can be unit-tested
+// without spawning processes. These wrappers handle the process invocation.
+//
+// Both run ASYNC (execFileAsyncSafe) so a slow ADB daemon or scrcpy enumeration
+// can no longer block the Electron main process and freeze every window. The
+// IPC handlers (phones:list / phones:cameras) already await these.
+async function listPhones() {
   try {
-    const out = execFileSyncSafe(ADB(), ['devices', '-l'], 30000);
-    const phones = [];
-    const issues = [];
-    const lines = out.split(/\r?\n/).slice(1); // skip "List of devices attached"
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      // Format: <serial>   <state> [<details>]
-      const m = trimmed.match(/^(\S+)\s+(\S+)(.*)$/);
-      if (!m) continue;
-      const serial = m[1];
-      const state = m[2].toLowerCase();
-      const rest = m[3] || '';
-
-      if (state === 'device') {
-        const modelMatch = rest.match(/model:(\S+)/);
-        const model = modelMatch ? modelMatch[1].replace(/_/g, ' ') : serial;
-        phones.push({ serial, model });
-      } else if (state === 'no') {
-        // "no permissions" state: no permissions (user in group ...)
-        issues.push({ serial, state: 'no permissions', message: 'USB debugging permission denied — check developer options and reconnect the cable.' });
-      } else {
-        issues.push({ serial, state, message: adbIssueMessage(state) });
-      }
-    }
+    const out = await execFileAsyncSafe(ADB(), ['devices', '-l'], 30000);
+    const { phones, issues } = parseAdbDevices(out);
     return { ok: true, phones, issues };
   } catch (err) {
     return { ok: false, error: String(err.message || err), phones: [], issues: [] };
@@ -281,23 +243,20 @@ function listPhones() {
 }
 
 // ─── scrcpy: list cameras for a device ────────────────────────────────────────
-function listCameras(serial) {
+async function listCameras(serial) {
   try {
-    // scrcpy prints camera list to stderr and exits
-    const out = execFileSyncSafe(SCRCPY(), ['-s', serial, '--list-cameras'], 20000, true);
-    const cameras = [];
-    const re = /--camera-id=(\d+)\s+\((\w+),\s*(\d+x\d+)/g;
-    let m;
-    while ((m = re.exec(out)) !== null) {
-      cameras.push({ id: m[1], facing: m[2], maxRes: m[3] });
-    }
-    return { ok: true, cameras };
+    // scrcpy prints camera list to stderr and exits non-zero but still emits
+    // useful output — execFileAsyncSafe surfaces that output as success.
+    const out = await execFileAsyncSafe(SCRCPY(), ['-s', serial, '--list-cameras'], 20000, true);
+    return { ok: true, cameras: parseScrcpyCameras(out) };
   } catch (err) {
     return { ok: false, error: String(err.message || err), cameras: [] };
   }
 }
 
-// execFile but synchronous-ish via execSync wrapper that captures stderr too
+// execFile but synchronous-ish via execSync wrapper that captures stderr too.
+// Retained for any remaining synchronous call sites; the hot enumeration paths
+// above use the async variant to avoid blocking the main process.
 function execFileSyncSafe(file, args, timeout, includeStderr = false) {
   const { execFileSync } = require('child_process');
   try {
@@ -314,6 +273,28 @@ function execFileSyncSafe(file, args, timeout, includeStderr = false) {
     if (combined) return combined;
     throw err;
   }
+}
+
+// Async equivalent of execFileSyncSafe. Resolves with captured stdout (+stderr
+// when includeStderr is set). Mirrors the sync version's key behaviour: a
+// non-zero exit that still produced output is treated as success, because
+// scrcpy --list-cameras writes the camera list to stderr and exits non-zero.
+function execFileAsyncSafe(file, args, timeout, includeStderr = false) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, {
+      timeout,
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        const combined = (stdout || '') + (includeStderr ? (stderr || '') : (err.stderr || ''));
+        if (combined) return resolve(combined);
+        return reject(err);
+      }
+      resolve(includeStderr ? (stdout || '') + (stderr || '') : (stdout || ''));
+    });
+  });
 }
 
 // ─── scrcpy: start camera mirroring ───────────────────────────────────────────
@@ -452,7 +433,7 @@ function createWindow(show = true) {
   logToFile('createWindow called with show=' + show);
   const slotIndex = windows.size % 4;
 
-  const iconPath = path.join(__dirname, 'assets', 'icon.png');
+  const iconPath = path.join(__dirname, 'assets', 'app icon.png');
   const hasIcon = fs.existsSync(iconPath);
 
   const win = new BrowserWindow({
@@ -463,6 +444,7 @@ function createWindow(show = true) {
     center: true,
     title: 'MultiCam Viewer',
     backgroundColor: '#0f0f1a',
+    frame: false,
     show,
     ...(hasIcon ? { icon: iconPath } : {}),
     webPreferences: {
@@ -472,6 +454,16 @@ function createWindow(show = true) {
       webSecurity: true,
       nativeWindowOpen: true,
     },
+  });
+
+  // Notify the renderer when the window is maximized/unmaximized so the
+  // title bar can swap its maximize/restore icon (covers keyboard shortcuts
+  // and double-click title bar, not just the custom button).
+  win.on('maximize', () => {
+    if (!win.isDestroyed()) win.webContents.send('window:maximizeChange', true);
+  });
+  win.on('unmaximize', () => {
+    if (!win.isDestroyed()) win.webContents.send('window:maximizeChange', false);
   });
 
   // Only grant the permissions this app actually needs (camera/mic + screen
@@ -569,10 +561,10 @@ function createWindow(show = true) {
 }
 
 // ─── IPC Handlers ────────────────────────────────────────────────────────────
-ipcMain.handle('phones:list',    async () => listPhones());
+ipcMain.handle('phones:list',    async () => await listPhones());
 ipcMain.handle('phones:cameras', async (e, serial) => {
   if (!isValidSerial(serial)) return { ok: false, error: 'Invalid device serial', cameras: [] };
-  return listCameras(serial);
+  return await listCameras(serial);
 });
 
 ipcMain.handle('scrcpy:start', async (e, opts) => {
@@ -581,9 +573,7 @@ ipcMain.handle('scrcpy:start', async (e, opts) => {
   if (!isValidCameraId(o.cameraId))    return { ok: false, error: 'Invalid camera id' };
   if (!isValidWindowTitle(o.windowTitle)) return { ok: false, error: 'Invalid window title' };
 
-  const resolution = typeof o.resolution === 'string' && /^\d{1,4}x\d{1,4}$/.test(o.resolution)
-    ? o.resolution
-    : '1280x720';
+  const resolution = isValidResolution(o.resolution) ? o.resolution : '1280x720';
   const [resW, resH] = resolution.split('x').map(Number);
   const maxSize = Math.max(resW, resH);
 
@@ -724,6 +714,14 @@ ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
+// Deliberate app quit — used by the "Exit App" button in Settings so the
+// user doesn't accidentally close the app via the taskbar/window X.
+ipcMain.handle('app:quit', async () => {
+  logToFile('App quit requested via IPC');
+  stopAllScrcpy();
+  app.quit();
+});
+
 ipcMain.handle('show-dialog', async (e, opts) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const o = opts || {};
@@ -743,10 +741,40 @@ ipcMain.handle('show-dialog', async (e, opts) => {
   return dialog.showMessageBox(win, safe);
 });
 
+// ─── Window Control IPC (for custom title bar in frameless mode) ─────────────
+// The renderer calls these from the minimize/maximize buttons in the top bar.
+// Each handler finds the BrowserWindow that sent the request via the event's
+// sender, so it works correctly for multi-window mode.
+ipcMain.handle('window:minimize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (w) w.minimize();
+  return true;
+});
+
+ipcMain.handle('window:toggleMaximize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return false;
+  if (w.isMaximized()) {
+    w.unmaximize();
+    return false;
+  }
+  w.maximize();
+  return true;
+});
+
+ipcMain.handle('window:isMaximized', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  return w ? w.isMaximized() : false;
+});
+
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   logToFile('App ready. userData: ' + app.getPath('userData'));
   logToFile('Initial appSettings: ' + JSON.stringify(appSettings));
+
+  // Remove the default application menu (File/Edit/View/Window/Help) for a
+  // clean, headless look — the custom top bar handles all window controls.
+  Menu.setApplicationMenu(null);
 
   // Clear the disk cache so updated image assets (logo, splash) are always
   // loaded fresh instead of served from an old cache.

@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "wscript dev-launcher.vbs",
+    "test": "node --test",
     "build": "node obfuscate.js obfuscate && electron-builder --win --x64 && node obfuscate.js restore",
     "build:dir": "node obfuscate.js obfuscate && electron-builder --win --x64 --dir && node obfuscate.js restore",
     "build:fuses": "node flip-fuses.js",
@@ -23,13 +24,14 @@
   "build": {
     "appId": "com.multicam.viewer",
     "productName": "MultiCam Viewer",
-    "icon": "assets/MCVLOGO1.png",
+    "icon": "assets/app icon.png",
     "win": {
       "target": "nsis"
     },
     "files": [
       "main.js",
       "preload.js",
+      "lib/**/*",
       "renderer.js",
       "index.html",
       "splash.html",

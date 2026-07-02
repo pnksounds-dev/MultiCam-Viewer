@@ -76,7 +76,7 @@
   </style>
 </head>
 <body>
-  <img id="splash-logo" src="assets/MCVLOGO1.png?v=2" alt="MultiCam Viewer">
+  <img id="splash-logo" src="assets/MCV-SplashScreen.png?v=3" alt="MultiCam Viewer">
   <div id="loading-bar-container">
     <div id="loading-bar"></div>
   </div>
@@ -84,7 +84,7 @@
   <script>
     console.log('Splash script running');
     const logo = document.getElementById('splash-logo');
-    logo.src = 'assets/MCVLOGO1.png?v=' + Date.now();
+    logo.src = 'assets/MCV-SplashScreen.png?v=' + Date.now();
     logo.onload = function() { console.log('Splash logo loaded'); };
     logo.onerror = function() { console.log('Splash logo failed to load'); };
   </script>

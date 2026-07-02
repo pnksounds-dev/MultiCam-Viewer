@@ -27,6 +27,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showDialog:     (opts) => ipcRenderer.invoke('show-dialog', opts),
   openExternal:   (url) => ipcRenderer.invoke('open-external', url),
 
+  // ── Window controls (custom title bar in frameless mode) ──
+  windowMinimize:        () => ipcRenderer.invoke('window:minimize'),
+  windowToggleMaximize:  () => ipcRenderer.invoke('window:toggleMaximize'),
+  windowIsMaximized:     () => ipcRenderer.invoke('window:isMaximized'),
+  onWindowMaximizeChange: (cb) => {
+    const listener = (_e, isMaximized) => cb(isMaximized);
+    ipcRenderer.on('window:maximizeChange', listener);
+    return () => ipcRenderer.removeListener('window:maximizeChange', listener);
+  },
+
   // ── Slot assignment ──
   onVcamSlot:    (cb) => ipcRenderer.on('vcam-slot', (e, slot) => cb(slot)),
   onVcamDllPath: (cb) => ipcRenderer.on('vcam-dll-path', (e, p) => cb(p)),
@@ -42,5 +52,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── App info ──
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  quitApp:       () => ipcRenderer.invoke('app:quit'),
 
 });

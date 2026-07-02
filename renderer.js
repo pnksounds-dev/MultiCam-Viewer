@@ -38,6 +38,16 @@ const btnRefresh         = document.getElementById('btn-refresh');
 const btnSettings        = document.getElementById('btn-settings');
 const settingsOverlay    = document.getElementById('settings-overlay');
 const btnCloseSettings   = document.getElementById('btn-close-settings');
+const btnExitApp         = document.getElementById('btn-exit-app');
+const helpToggle         = document.getElementById('help-toggle');
+const helpContent        = document.getElementById('help-content');
+const btnViewChangelog   = document.getElementById('btn-view-changelog');
+const changelogOverlay   = document.getElementById('changelog-overlay');
+const btnCloseChangelog  = document.getElementById('btn-close-changelog');
+const btnMinimize        = document.getElementById('btn-minimize');
+const btnMaximize        = document.getElementById('btn-maximize');
+const maximizeIcon       = document.getElementById('maximize-icon');
+const restoreIcon        = document.getElementById('restore-icon');
 const vcamCanvas         = document.getElementById('vcam-canvas');
 const vcamInstallStatus  = document.getElementById('vcam-install-status');
 const btnInstallVcamSettings   = document.getElementById('btn-install-vcam-settings');
@@ -83,10 +93,59 @@ let currentStream    = null;
 let vcamSlot         = 0;
 let vcamDriverReady  = false;
 let fpsInterval      = null;
-let fpsFrameCount    = 0;
 let lastFpsTime      = Date.now();
-let vcamAnimFrame    = null;
+let frameHandle      = null;    // id from requestVideoFrameCallback or requestAnimationFrame
 let vcamCtx          = null;
+
+// ─── Phase 1 frame-pipeline instrumentation ───────────────────────────────────
+// Prefer requestVideoFrameCallback so we only do a GPU readback + IPC send when
+// the source actually delivers a new video frame (instead of on every display
+// refresh, which wastes work on high-refresh-rate monitors). Falls back to
+// requestAnimationFrame where rVFC is unavailable.
+const supportsRVFC = typeof HTMLVideoElement !== 'undefined' &&
+  'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+let perfFrameCount = 0;         // frames actually delivered to the vcam since last sample
+let perfReadbackMs = 0;         // EMA of getImageData() time (ms)
+const PERF_HUD = false;         // flip to true to show readback timing in the FPS badge
+
+// ─── Phase 2: WebGL2 GPU compositor (feature-flagged) ──────────────────────────
+// When enabled AND available, the raw (non-greenscreen) frame path renders the
+// video through a WebGL2 shader instead of the 2D canvas. The video is uploaded
+// as a GPU texture (no CPU copy for the draw) and brightness/contrast/saturation
+// are applied in the fragment shader (GPU) rather than via a 2D-canvas CSS filter
+// (CPU composite). This is the foundation for the Phase 4 GPU effects (chroma
+// key, LUTs, multi-layer). Greenscreen still uses the 2D canvas path for now.
+//
+// DEFAULTS TO OFF — the 2D path remains the safe default until this is verified
+// end-to-end on Windows with a real camera + OBS. Flip to true to opt in.
+const USE_WEBGL_COMPOSITOR = false;
+let glCompositor = null;        // active GlCompositor instance, or null when 2D path in use
+
+let frameUsedRVFC = false;
+// useRVFC defaults to true (raw preview path, where the video is visible). The
+// greenscreen path passes false because cameraVideo is hidden (display:none)
+// during segmentation, and rVFC may not fire for non-composited video elements.
+function scheduleFrame(cb, useRVFC = true) {
+  const canRVFC = useRVFC && supportsRVFC && cameraVideo &&
+    typeof cameraVideo.requestVideoFrameCallback === 'function';
+  frameUsedRVFC = canRVFC;
+  if (canRVFC) {
+    frameHandle = cameraVideo.requestVideoFrameCallback(() => cb());
+  } else {
+    frameHandle = requestAnimationFrame(() => cb());
+  }
+}
+function cancelFrame() {
+  if (frameHandle == null) return;
+  try {
+    if (frameUsedRVFC) {
+      cameraVideo.cancelVideoFrameCallback(frameHandle);
+    } else {
+      cancelAnimationFrame(frameHandle);
+    }
+  } catch {}
+  frameHandle = null;
+}
 let activeScrcpyTitle = null;   // currently running scrcpy window title (if any)
 let sourceOptions    = [];      // metadata for each dropdown option (by value)
 let lastScrcpyError  = '';      // last error line from scrcpy output
@@ -182,6 +241,19 @@ function applySettings(settings) {
   if (settings.theme) {
     settingTheme.value = settings.theme;
     document.documentElement.setAttribute('data-theme', settings.theme);
+    updateHeaderLogoForTheme(settings.theme);
+  }
+}
+
+// Swap the header wordmark logo for a light-mode variant when the light theme
+// is active, so it stays legible on a light background.
+function updateHeaderLogoForTheme(theme) {
+  const appTitle = document.getElementById('app-title');
+  if (!appTitle) return;
+  if (theme === 'light') {
+    appTitle.src = 'assets/MCVLOGO-header-lightmode.png?v=' + Date.now();
+  } else {
+    appTitle.src = 'assets/MCVLOGO-header.png?v=' + Date.now();
   }
 }
 
@@ -418,8 +490,17 @@ async function startPhoneCamera(opt) {
   // Wait for the scrcpy window to appear, then capture it
   statusText.textContent = '[2/3] Waiting for phone video window…';
   const found = await waitForCaptureWindow(windowTitle, 15000);
-  if (activeScrcpyTitle !== windowTitle) return; // selection changed mid-wait
+  if (activeScrcpyTitle !== windowTitle) {
+    // Selection changed mid-wait — the new selection manages its own scrcpy;
+    // make sure this orphaned one is cleaned up.
+    window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+    return;
+  }
   if (!found) {
+    // The scrcpy process is still running but produced no capturable window —
+    // kill it so it doesn't linger invisibly off-screen.
+    window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+    activeScrcpyTitle = null;
     statusText.textContent = lastScrcpyError
       ? 'scrcpy error: ' + lastScrcpyError
       : 'Phone video window did not appear. Watch the phone for a camera/permission prompt, then ↻ Refresh.';
@@ -444,6 +525,9 @@ async function startPhoneCamera(opt) {
       return;
     } catch (err) {
       if (attempt === 2) {
+        // Never attached — tear down the scrcpy process we started.
+        window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+        activeScrcpyTitle = null;
         statusText.textContent = 'Capture error: ' + err.message;
       } else {
         await new Promise(r => setTimeout(r, 800));
@@ -631,8 +715,15 @@ async function startSecondaryPhoneCamera(pane, opt) {
   }
 
   const found = await waitForCaptureWindow(windowTitle, 15000);
-  if (pane.scrcpyTitle !== windowTitle) return;
+  if (pane.scrcpyTitle !== windowTitle) {
+    // Pane selection changed mid-wait — clean up this orphaned scrcpy.
+    window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+    return;
+  }
   if (!found) {
+    // No capturable window appeared — kill the lingering scrcpy process.
+    window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+    pane.scrcpyTitle = null;
     statusText.textContent = `Camera ${pane.id} window did not appear`;
     return;
   }
@@ -653,6 +744,9 @@ async function startSecondaryPhoneCamera(pane, opt) {
       return;
     } catch (err) {
       if (attempt === 2) {
+        // Never attached — tear down the scrcpy process we started.
+        window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
+        pane.scrcpyTitle = null;
         statusText.textContent = `Camera ${pane.id} capture error: ` + err.message;
       } else {
         await new Promise(r => setTimeout(r, 800));
@@ -814,24 +908,196 @@ function openNewCameraSeparate() {
 
 // ─── FPS Counter ──────────────────────────────────────────────────────────────
 function startFpsCounter() {
-  fpsFrameCount = 0;
-  lastFpsTime   = Date.now();
-  function tick() {
-    if (!currentStream) return;
-    fpsFrameCount++;
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
+  perfFrameCount = 0;
+  lastFpsTime    = Date.now();
+  if (fpsInterval) clearInterval(fpsInterval);
+  // Report the number of frames actually pushed to the virtual camera (counted
+  // in the frame loops below), not the number of display refreshes. This gives
+  // a truthful FPS reading and reflects the source's real cadence.
   fpsInterval = setInterval(() => {
     const dt = (Date.now() - lastFpsTime) / 1000;
-    fpsDisplay.textContent = `${Math.round(fpsFrameCount / dt)} FPS`;
-    fpsFrameCount = 0;
-    lastFpsTime  = Date.now();
+    const fps = dt > 0 ? Math.round(perfFrameCount / dt) : 0;
+    fpsDisplay.textContent = PERF_HUD
+      ? `${fps} FPS · ${perfReadbackMs.toFixed(1)}ms rb`
+      : `${fps} FPS`;
+    perfFrameCount = 0;
+    lastFpsTime    = Date.now();
   }, 1000);
 }
 function stopFpsCounter() {
   if (fpsInterval) { clearInterval(fpsInterval); fpsInterval = null; }
   fpsDisplay.textContent = '';
+}
+
+// ─── Phase 2: WebGL2 GPU compositor ───────────────────────────────────────────
+// Renders a video element to the vcam canvas via a full-screen textured quad
+// with a brightness/contrast/saturation fragment shader, then reads the pixels
+// back into a reusable top-down RGBA buffer for the virtual camera.
+//
+// Correctness notes (the fiddly WebGL Y-convention):
+//  - UNPACK_FLIP_Y_WEBGL=true on upload → the canvas renders the video
+//    right-side up (important because the output window captures this canvas).
+//  - gl.readPixels reads bottom-up (OpenGL origin is bottom-left), so the
+//    returned buffer is flipped in place to top-down row order, which is what
+//    UnityCapture expects (matching the 2D-canvas getImageData output).
+//
+// This is only used for the raw frame path. Greenscreen still composites on the
+// 2D canvas (see startSegmentationLoop / onSegmentationResults).
+const VERT_SRC = `#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const FRAG_SRC = `#version 300 es
+precision mediump float;
+uniform sampler2D u_tex;
+uniform float u_brightness; // 1.0 = neutral
+uniform float u_contrast;   // 1.0 = neutral
+uniform float u_saturation; // 1.0 = neutral
+in vec2 v_uv;
+out vec4 frag;
+vec3 adjust(vec3 c) {
+  c *= u_brightness;
+  c = (c - 0.5) * u_contrast + 0.5;
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, u_saturation);
+  return clamp(c, 0.0, 1.0);
+}
+void main() {
+  vec3 c = texture(u_tex, v_uv).rgb;
+  frag = vec4(adjust(c), 1.0);
+}`;
+
+function compileShader(gl, type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
+    throw new Error('Shader compile failed: ' + log);
+  }
+  return sh;
+}
+
+// In-place vertical row flip of an RGBA8 buffer (bottom-up → top-down).
+function flipRowsVertical(buf, width, height) {
+  const rowBytes = width * 4;
+  const tmp = new Uint8Array(rowBytes);
+  for (let i = 0, j = height - 1; i < j; i++, j--) {
+    const a = i * rowBytes, b = j * rowBytes;
+    tmp.set(buf.subarray(a, a + rowBytes));
+    buf.copyWithin(a, b, b + rowBytes);
+    buf.set(tmp, b);
+  }
+}
+
+// Create a GlCompositor for the given canvas + dimensions. Returns null if
+// WebGL2 is unavailable or context/program creation fails (caller falls back to
+// the 2D canvas path).
+function tryCreateGlCompositor(canvas, width, height) {
+  let gl;
+  try {
+    gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+  } catch { gl = null; }
+  if (!gl) return null;
+  try {
+    const vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC);
+    const frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vert);
+    gl.attachShader(prog, frag);
+    gl.linkProgram(prog);
+    gl.deleteShader(vert);
+    gl.deleteShader(frag);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error('Program link failed: ' + gl.getProgramInfoLog(prog));
+    }
+    // Full-screen quad (two triangles)
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,  1, -1,  -1, 1,
+      -1,  1,  1, -1,   1, 1,
+    ]), gl.STATIC_DRAW);
+    const aPos = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    const uBrightness = gl.getUniformLocation(prog, 'u_brightness');
+    const uContrast   = gl.getUniformLocation(prog, 'u_contrast');
+    const uSaturation = gl.getUniformLocation(prog, 'u_saturation');
+
+    const readBuf = new Uint8Array(width * height * 4);
+
+    return {
+      _gl: gl,
+      _prog: prog,
+      _vao: vao,
+      _vbo: vbo,
+      _tex: tex,
+      _uB: uBrightness, _uC: uContrast, _uS: uSaturation,
+      _w: width, _h: height,
+      _readBuf: readBuf,
+      setAdjust(exposure, contrast, saturation) {
+        // Match the 2D path: 1 + value/100 (value range -100..100).
+        this._brightness = 1 + (exposure / 100);
+        this._contrast   = 1 + (contrast / 100);
+        this._saturation = 1 + (saturation / 100);
+      },
+      draw(video) {
+        const gl = this._gl;
+        gl.viewport(0, 0, this._w, this._h);
+        gl.useProgram(this._prog);
+        gl.bindTexture(gl.TEXTURE_2D, this._tex);
+        // texImage2D from a video element uploads the current frame to the GPU.
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this._w, this._h, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        gl.uniform1f(this._uB, this._brightness || 1);
+        gl.uniform1f(this._uC, this._contrast || 1);
+        gl.uniform1f(this._uS, this._saturation || 1);
+        gl.bindVertexArray(this._vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindVertexArray(null);
+      },
+      readPixels() {
+        const gl = this._gl;
+        gl.readPixels(0, 0, this._w, this._h, gl.RGBA, gl.UNSIGNED_BYTE, this._readBuf);
+        flipRowsVertical(this._readBuf, this._w, this._h);
+        return this._readBuf.buffer;
+      },
+      dispose() {
+        try {
+          this._gl.deleteTexture(this._tex);
+          this._gl.deleteBuffer(this._vbo);
+          this._gl.deleteVertexArray(this._vao);
+          this._gl.deleteProgram(this._prog);
+          const ext = this._gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
+        } catch {}
+      },
+    };
+  } catch (err) {
+    console.error('WebGL2 compositor init failed, falling back to 2D:', err);
+    try {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+    } catch {}
+    return null;
+  }
 }
 
 // ─── Virtual Camera Output (UnityCapture) ─────────────────────────────────────
@@ -846,7 +1112,22 @@ async function startVcamOutput() {
   const h = cameraVideo.videoHeight || s.height || 720;
 
   vcamCanvas.width = w; vcamCanvas.height = h;
-  vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
+
+  // Phase 2: prefer the WebGL2 GPU compositor for the raw path when enabled.
+  // Greenscreen still composites on the 2D canvas, so don't create the GL
+  // compositor when greenscreen is active — startFrameLoop will acquire a 2D
+  // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
+  // in which case we fall back to the 2D canvas path.
+  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled) {
+    glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
+  } else {
+    glCompositor = null;
+  }
+  if (!glCompositor) {
+    vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
+  } else {
+    vcamCtx = null; // GL path owns the canvas; 2D context not needed
+  }
 
   if (vcamDriverReady) {
     // Check if the native addon is available
@@ -886,12 +1167,30 @@ async function startVcamOutput() {
 }
 
 function startFrameLoop(w, h) {
-  if (vcamAnimFrame) { cancelAnimationFrame(vcamAnimFrame); vcamAnimFrame = null; }
+  cancelFrame();
   if (greenscreenEnabled && segmentationReady) {
+    // Greenscreen composites on the 2D canvas. If the GL compositor was active
+    // for the raw path, release it and acquire a 2D context for segmentation.
+    if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
+    if (!vcamCtx) vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
     startSegmentationLoop();
+  } else if (glCompositor) {
+    startGlRawFrameLoop(w, h);
   } else {
     startRawFrameLoop(w, h);
   }
+}
+
+function startGlRawFrameLoop(w, h) {
+  function draw() {
+    if (!currentStream || !glCompositor) return;
+    glCompositor.setAdjust(gsExposureValue, gsContrastValue, gsSaturationValue);
+    glCompositor.draw(cameraVideo);
+    sendFrameToVcam(w, h);
+    perfFrameCount++;
+    scheduleFrame(draw);
+  }
+  scheduleFrame(draw);
 }
 
 function setVideoFilters(ctx) {
@@ -904,10 +1203,34 @@ function setVideoFilters(ctx) {
 // Send RGBA frame data to the virtual camera via IPC
 // UnityCapture expects RGBA8 (format=0), top-down row order
 // The DirectShow filter converts RGBA→BGRA and handles bottom-up output internally
+//
+// Backpressure: if the previous frame's IPC hasn't been consumed by the main
+// process yet, we DROP this frame rather than queuing another multi-MB readback
+// + clone. This keeps memory and latency bounded under load and lets the source
+// cadence (rVFC) naturally throttle us. The virtual camera keeps the most
+// recently written frame until the next one arrives, so dropping is the right
+// policy (drop-old would be wrong here — we want the freshest frame to win).
+let vcamFrameInFlight = false;
 function sendFrameToVcam(width, height) {
   if (!vcamNativeReady) return;
-  const img = vcamCtx.getImageData(0, 0, width, height);
-  window.electronAPI.vcamFrame({ slot: vcamSlot, data: img.data.buffer }).catch(() => {});
+  if (vcamFrameInFlight) return; // main process still writing the previous frame
+  vcamFrameInFlight = true;
+  const t0 = performance.now();
+  // Phase 2: read back from the WebGL2 compositor's reusable buffer when active
+  // (single readPixels + in-place Y-flip), otherwise from the 2D canvas.
+  let buf;
+  if (glCompositor) {
+    buf = glCompositor.readPixels();
+  } else {
+    const img = vcamCtx.getImageData(0, 0, width, height);
+    buf = img.data.buffer;
+  }
+  // Exponential moving average of the GPU→CPU readback cost (dev perf HUD).
+  perfReadbackMs += (performance.now() - t0 - perfReadbackMs) * 0.1;
+  window.electronAPI
+    .vcamFrame({ slot: vcamSlot, data: buf })
+    .catch(() => {})
+    .finally(() => { vcamFrameInFlight = false; });
 }
 
 function startRawFrameLoop(w, h) {
@@ -917,16 +1240,17 @@ function startRawFrameLoop(w, h) {
     vcamCtx.drawImage(cameraVideo, 0, 0, w, h);
     vcamCtx.filter = 'none';
     sendFrameToVcam(w, h);
-    vcamAnimFrame = requestAnimationFrame(draw);
+    perfFrameCount++;
+    scheduleFrame(draw);
   }
-  vcamAnimFrame = requestAnimationFrame(draw);
+  scheduleFrame(draw);
 }
 
 function startSegmentationLoop() {
   async function loop() {
     if (!currentStream || !vcamCtx || !greenscreenEnabled) return;
     if (isSegmenting) {
-      vcamAnimFrame = requestAnimationFrame(loop);
+      scheduleFrame(loop, false);
       return;
     }
     isSegmenting = true;
@@ -936,13 +1260,15 @@ function startSegmentationLoop() {
       console.error('Segmentation error:', e);
     }
     isSegmenting = false;
-    vcamAnimFrame = requestAnimationFrame(loop);
+    scheduleFrame(loop, false);
   }
-  vcamAnimFrame = requestAnimationFrame(loop);
+  scheduleFrame(loop, false);
 }
 
 function stopVcamOutput() {
-  if (vcamAnimFrame) { cancelAnimationFrame(vcamAnimFrame); vcamAnimFrame = null; }
+  cancelFrame();
+  vcamFrameInFlight = false; // clear so a restart isn't blocked by a stale flag
+  if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
   if (vcamNativeReady) {
     window.electronAPI?.vcamStop({ slot: vcamSlot }).catch(() => {});
   }
@@ -1017,6 +1343,7 @@ function onSegmentationResults(results) {
 
   // 4. Send composited frame to the virtual camera
   sendFrameToVcam(w, h);
+  perfFrameCount++;
 }
 
 function drawCoverImage(ctx, img, w, h) {
@@ -1040,7 +1367,8 @@ function drawCoverImage(ctx, img, w, h) {
 }
 
 function restartFrameLoop() {
-  if (!currentStream || !vcamCtx) return;
+  // Allow restart when either the 2D context or the GL compositor is active.
+  if (!currentStream || (!vcamCtx && !glCompositor)) return;
   const s = currentStream.getVideoTracks()[0].getSettings();
   const w = s.width  || vcamCanvas.width  || 1280;
   const h = s.height || vcamCanvas.height || 720;
@@ -1070,10 +1398,11 @@ async function toggleGreenscreen() {
   }
   greenscreenEnabled = !greenscreenEnabled;
   updateGreenscreenUI();
+  const hasOutput = currentStream && (vcamCtx || glCompositor);
   if (greenscreenEnabled) {
     await initSegmentation();
-    if (currentStream && vcamCtx) restartFrameLoop();
-  } else if (currentStream && vcamCtx) {
+    if (hasOutput) restartFrameLoop();
+  } else if (hasOutput) {
     restartFrameLoop();
   }
 }
@@ -1160,6 +1489,7 @@ settingShowSplash.addEventListener('change', () => {
 settingTheme.addEventListener('change', () => {
   const theme = settingTheme.value;
   document.documentElement.setAttribute('data-theme', theme);
+  updateHeaderLogoForTheme(theme);
   saveSettingsDebounced({ theme });
 });
 
@@ -1213,6 +1543,64 @@ btnRefresh.addEventListener('click', refreshSources);
 btnSettings.addEventListener('click', () => settingsOverlay.classList.remove('hidden'));
 btnCloseSettings.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); });
+
+// Exit App — deliberate quit so the user doesn't accidentally close via the window X.
+if (btnExitApp) {
+  btnExitApp.addEventListener('click', () => {
+    window.electronAPI?.quitApp?.();
+  });
+}
+
+// Collapsible Help & Guides section in Settings.
+if (helpToggle && helpContent) {
+  helpToggle.addEventListener('click', () => {
+    const expanded = helpToggle.getAttribute('aria-expanded') === 'true';
+    helpToggle.setAttribute('aria-expanded', String(!expanded));
+    helpContent.classList.toggle('hidden', expanded);
+  });
+}
+
+// Changelog overlay — opened from the About section, closes on X / click-outside / Escape.
+if (btnViewChangelog && changelogOverlay) {
+  btnViewChangelog.addEventListener('click', () => changelogOverlay.classList.remove('hidden'));
+}
+if (btnCloseChangelog && changelogOverlay) {
+  btnCloseChangelog.addEventListener('click', () => changelogOverlay.classList.add('hidden'));
+  changelogOverlay.addEventListener('click', (e) => {
+    if (e.target === changelogOverlay) changelogOverlay.classList.add('hidden');
+  });
+}
+
+// ─── Window controls (frameless mode) ─────────────────────────────────────────
+// Minimize and maximize/restore buttons in the custom title bar.
+// No close button — quitting is done via "Exit App" in Settings.
+function updateMaximizeIcon(isMaximized) {
+  if (!maximizeIcon || !restoreIcon) return;
+  maximizeIcon.classList.toggle('hidden', isMaximized);
+  restoreIcon.classList.toggle('hidden', !isMaximized);
+  if (btnMaximize) btnMaximize.title = isMaximized ? 'Restore' : 'Maximize';
+}
+
+if (btnMinimize) {
+  btnMinimize.addEventListener('click', () => {
+    window.electronAPI?.windowMinimize?.();
+  });
+}
+
+if (btnMaximize) {
+  btnMaximize.addEventListener('click', () => {
+    window.electronAPI?.windowToggleMaximize?.().then(updateMaximizeIcon);
+  });
+}
+
+// Sync the maximize/restore icon with the actual window state (covers
+// keyboard shortcuts like Win+Up and double-click title bar).
+if (window.electronAPI?.onWindowMaximizeChange) {
+  window.electronAPI.onWindowMaximizeChange(updateMaximizeIcon);
+}
+if (window.electronAPI?.windowIsMaximized) {
+  window.electronAPI.windowIsMaximized().then(updateMaximizeIcon);
+}
 
 btnInstallVcam.addEventListener('click', installVcamDriver);
 btnInstallVcamSettings.addEventListener('click', installVcamDriver);
@@ -1324,7 +1712,10 @@ document.querySelectorAll('.guide-tab').forEach(tab => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') settingsOverlay.classList.add('hidden');
+  if (e.key === 'Escape') {
+    settingsOverlay.classList.add('hidden');
+    if (changelogOverlay) changelogOverlay.classList.add('hidden');
+  }
   if (e.key === 'F5')     refreshSources();
 });
 

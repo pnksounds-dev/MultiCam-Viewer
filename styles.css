@@ -68,32 +68,33 @@ html, body {
   width: 100vw;
 }
 
-/* ---- TOP BAR ---- */
+/* ---- HEADER / TITLE BAR ---- */
 #topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: 8px 16px;
-  min-height: var(--topbar-h);
-  height: auto;
+  padding: 5px 14px;
+  padding-right: 76px; /* reserve space for the absolute-positioned window controls */
+  height: var(--topbar-h);
   flex-shrink: 0;
-  gap: 12px;
   -webkit-app-region: drag;
-  flex-wrap: wrap;
+  position: relative; /* anchor for the absolutely-positioned window controls */
 }
 
 #title-area {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
 
 #header-logo {
-  height: 28px;
+  height: 22px;
   width: auto;
   object-fit: contain;
   flex-shrink: 0;
@@ -102,7 +103,12 @@ html, body {
 }
 
 #app-title {
-  display: none;
+  height: 18px;
+  width: auto;
+  object-fit: contain;
+  flex-shrink: 0;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .badge {
@@ -116,26 +122,43 @@ html, body {
   letter-spacing: 0.5px;
 }
 
-#controls {
+/* ---- CAMERA CONTROLS BAR ---- */
+/* Grid-like layout: primary capture controls on the left, secondary actions
+   on the right. No wasted space — uses space-between to fill the bar. */
+#controls-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 5px 12px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  gap: 12px;
+}
+
+#controls-left,
+#controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   -webkit-app-region: no-drag;
   flex-wrap: wrap;
+}
+
+#controls-right {
   justify-content: flex-end;
-  flex: 1;
-  min-width: 0;
 }
 
 #device-selector-wrap,
 #resolution-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -145,10 +168,10 @@ select {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 13px;
+  padding: 4px 8px;
+  font-size: 12px;
   cursor: pointer;
-  max-width: 220px;
+  max-width: 180px;
   outline: none;
 }
 
@@ -161,8 +184,8 @@ button {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 13px;
+  padding: 5px 10px;
+  font-size: 12px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   white-space: nowrap;
@@ -177,9 +200,73 @@ button:active {
   opacity: 0.8;
 }
 
-#btn-settings {
-  font-size: 16px;
+/* Icon-text control buttons (Output, Green Screen) and icon-only buttons
+   (Refresh, Settings) — compact, aligned, grid-friendly. */
+.ctrl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ctrl-icon-btn.icon-only {
+  padding: 5px;
+  width: 28px;
+  height: 28px;
+}
+
+.ctrl-icon-btn svg {
+  flex-shrink: 0;
+}
+
+#btn-settings {
+  font-size: 12px;
+  padding: 5px;
+}
+
+/* ─── Window controls (frameless mode) ─────────────────────────────────────── */
+/* Minimal minimize / maximize buttons pinned to the absolute top-right of the
+   topbar. Positioned absolutely so they stay in the corner even when the
+   controls row wraps to a second line. No close button — quitting is done via
+   the "Exit App" button in Settings to prevent accidental closure. */
+#window-controls {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+  z-index: 10;
+}
+
+.win-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.win-ctrl:hover {
+  background: var(--accent2);
+  color: var(--text);
+  border: none;
+}
+
+.win-ctrl:active {
+  opacity: 0.7;
 }
 
 #btn-new-window {
@@ -666,7 +753,8 @@ button:active {
 }
 
 .settings-slider-wrap label {
-  width: 80px;
+  min-width: 80px;
+  flex-shrink: 0;
   color: var(--text);
 }
 
@@ -753,6 +841,7 @@ button:active {
 
 /* ---- CLEAN MODE (for output window / clean capture) ---- */
 body.clean-mode #topbar,
+body.clean-mode #controls-bar,
 body.clean-mode #status-bar,
 body.clean-mode #footer,
 body.clean-mode #greenscreen-badge {
@@ -1006,4 +1095,316 @@ body.clean-mode #vcam-canvas {
 
 .hidden {
   display: none !important;
+}
+
+/* ─── Help-tip "?" hover tooltips ──────────────────────────────────────────── */
+/* Reusable inline "?" icon that reveals a tooltip on hover/focus.
+   Used in Settings to keep the panel concise — detail lives behind the
+   question mark instead of always being visible as a paragraph. */
+.help-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--bg-control);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+  position: relative;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.help-tip:hover,
+.help-tip:focus {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* The tooltip body — populated from data-help via CSS attr() */
+.help-tip::after {
+  content: attr(data-help);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-dark);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  width: max-content;
+  max-width: 280px;
+  white-space: normal;
+  text-align: left;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+
+/* Small arrow pointing down at the "?" */
+.help-tip::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+  z-index: 200;
+}
+
+.help-tip:hover::after,
+.help-tip:hover::before,
+.help-tip:focus::after,
+.help-tip:focus::before {
+  opacity: 1;
+}
+
+/* ─── Settings button row (paired buttons) ─────────────────────────────────── */
+.settings-button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ─── Exit App button ──────────────────────────────────────────────────────── */
+.exit-app-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.exit-app-btn:hover {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+
+.exit-app-btn:active {
+  opacity: 0.85;
+}
+
+/* ─── Collapsible Help & Guides section ────────────────────────────────────── */
+.help-section {
+  /* spans full width in the settings grid */
+  grid-column: 1 / -1;
+}
+
+.help-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.help-toggle:hover {
+  background: var(--accent2);
+  border-color: var(--accent);
+}
+
+.help-chevron {
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.help-toggle[aria-expanded="true"] .help-chevron {
+  transform: rotate(180deg);
+}
+
+.help-content {
+  margin-top: 12px;
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.help-content.hidden {
+  display: none;
+}
+
+.help-block h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.help-block p,
+.help-block li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.help-block ol,
+.help-block ul {
+  padding-left: 20px;
+}
+
+.help-block strong {
+  color: var(--text);
+}
+
+/* ─── Changelog button in About section ────────────────────────────────────── */
+.changelog-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  background: var(--bg-control);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.changelog-link-btn:hover {
+  background: var(--bg-card);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* ─── Changelog overlay ────────────────────────────────────────────────────── */
+#changelog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+}
+
+#changelog-overlay.hidden {
+  display: none;
+}
+
+#changelog-panel {
+  position: relative;
+  z-index: 111;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 92vw;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+#changelog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+#changelog-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#btn-close-changelog {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#btn-close-changelog:hover { color: var(--accent); background: transparent; }
+
+#changelog-body {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.changelog-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.changelog-version {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--green);
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+.changelog-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.changelog-entry ul {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.changelog-entry li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.changelog-entry strong {
+  color: var(--text);
 }

@@ -59,7 +59,9 @@ class VcamNative {
     this._height = 0;
     this._slot = 0;
     this._available = true;
+    this._dataSize = 0;
     this._headerArrayType = null;
+    this._pixelArrayType = null;
   }
 
   get available() {
@@ -121,36 +123,57 @@ class VcamNative {
     this._width = width;
     this._height = height;
     this._slot = slot;
-    this._headerArrayType = koffi.array(koffi.types.uint8, TOTAL_SHARED_SIZE);
+    this._dataSize = width * height * 4;
+
+    // Koffi array types sized to exactly what we write, so encode() copies only
+    // the bytes we need rather than the full ~66 MB shared region. The header
+    // type covers the fixed 32-byte SharedMemHeader; the pixel type covers one
+    // RGBA frame and is reused for every writeFrame() call.
+    this._headerArrayType = koffi.array(koffi.types.uint8, SHARED_MEM_HEADER_SIZE);
+    this._pixelArrayType = koffi.array(koffi.types.uint8, this._dataSize);
+
+    // The SharedMemHeader is constant for the lifetime of this stream (width,
+    // height, stride and format never change without a re-init), so we write it
+    // exactly once here instead of rebuilding and re-encoding it every frame.
+    this._writeHeader();
 
     return true;
   }
 
+  _writeHeader() {
+    const stride = this._width; // stride in pixels (not bytes), per UnityCapture protocol
+    const header = Buffer.alloc(SHARED_MEM_HEADER_SIZE);
+    header.writeUInt32LE(MAX_SHARED_IMAGE_SIZE, 0);  // maxSize
+    header.writeInt32LE(this._width, 4);              // width
+    header.writeInt32LE(this._height, 8);             // height
+    header.writeInt32LE(stride, 12);                  // stride (in pixels)
+    header.writeInt32LE(FORMAT_UINT8, 16);            // format (0 = RGBA8)
+    header.writeInt32LE(1, 20);                       // resizemode (1 = linear resize)
+    header.writeInt32LE(0, 24);                       // mirrormode (0 = disabled)
+    header.writeInt32LE(0, 28);                       // timeout
+
+    const waitResult = WaitForSingleObject(this._hMutex, INFINITE);
+    if (waitResult !== WAIT_OBJECT_0) return;
+    try {
+      koffi.encode(this._pShared, 0, this._headerArrayType, header);
+    } finally {
+      ReleaseMutex(this._hMutex);
+    }
+  }
+
   writeFrame(rgbaBuffer) {
     if (!this._pShared) return false;
-
-    const stride = this._width; // stride in pixels (not bytes), per UnityCapture protocol
-    const dataSize = this._width * this._height * 4;
-    if (rgbaBuffer.length < dataSize) return false;
+    if (rgbaBuffer.length < this._dataSize) return false;
 
     // Lock mutex
     const waitResult = WaitForSingleObject(this._hMutex, INFINITE);
     if (waitResult !== WAIT_OBJECT_0) return false;
 
     try {
-      // Build the SharedMemHeader + pixel data
-      const header = Buffer.alloc(SHARED_MEM_HEADER_SIZE);
-      header.writeUInt32LE(MAX_SHARED_IMAGE_SIZE, 0);  // maxSize
-      header.writeInt32LE(this._width, 4);              // width
-      header.writeInt32LE(this._height, 8);             // height
-      header.writeInt32LE(stride, 12);                  // stride (in pixels)
-      header.writeInt32LE(FORMAT_UINT8, 16);            // format (0 = RGBA8)
-      header.writeInt32LE(1, 20);                       // resizemode (1 = linear resize)
-      header.writeInt32LE(0, 24);                       // mirrormode (0 = disabled)
-      header.writeInt32LE(0, 28);                       // timeout
-
-      const combined = Buffer.concat([header, rgbaBuffer.subarray(0, dataSize)]);
-      koffi.encode(this._pShared, this._headerArrayType, combined);
+      // Write only the pixel region, directly after the (already-written)
+      // header. No per-frame Buffer.concat and no full-region encode — koffi
+      // copies exactly dataSize bytes via the pre-sized pixel array type.
+      koffi.encode(this._pShared, SHARED_MEM_HEADER_SIZE, this._pixelArrayType, rgbaBuffer);
     } finally {
       // Release mutex
       ReleaseMutex(this._hMutex);
@@ -185,7 +208,9 @@ class VcamNative {
     }
     this._width = 0;
     this._height = 0;
+    this._dataSize = 0;
     this._headerArrayType = null;
+    this._pixelArrayType = null;
   }
 
   isReady() {
