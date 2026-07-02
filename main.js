@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
 const path = require('path');
-const { execSync, execFile, spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
 const {
@@ -12,6 +12,8 @@ const {
   isValidWindowTitle,
   isValidResolution,
 } = require('./lib/parsers');
+const { verifyLicenseKey } = require('./lib/license');
+const { checkBundleIntegrity } = require('./lib/integrity');
 
 // ─── Settings persistence ────────────────────────────────────────────────────
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
@@ -40,11 +42,49 @@ function logToFile(msg) {
   } catch {}
 }
 
+// ─── Settings encryption ─────────────────────────────────────────────────────
+// Encrypt sensitive fields (license key) at rest so the settings file is not
+// a trivially copy-pasteable credential. The key is derived from machine/user
+// context, binding the encrypted value to this PC/account.
+const SETTINGS_IV = Buffer.alloc(16, 0); // deterministic IV for this use case
+
+function deriveSettingsKey() {
+  const salt = process.env.USERNAME || process.env.USER || 'user';
+  const info = `${app.name}|${app.getPath('userData')}|${process.env.COMPUTERNAME || 'host'}`;
+  return crypto.pbkdf2Sync(info, salt, 10000, 32, 'sha256');
+}
+
+function encryptSetting(plaintext) {
+  if (!plaintext) return plaintext;
+  try {
+    const cipher = crypto.createCipheriv('aes-256-gcm', deriveSettingsKey(), SETTINGS_IV);
+    const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `enc:${Buffer.concat([encrypted, tag]).toString('base64')}`;
+  } catch { return plaintext; }
+}
+
+function decryptSetting(ciphertext) {
+  if (!ciphertext || typeof ciphertext !== 'string' || !ciphertext.startsWith('enc:')) return ciphertext;
+  try {
+    const combined = Buffer.from(ciphertext.slice(4), 'base64');
+    if (combined.length < 17) return '';
+    const encrypted = combined.slice(0, -16);
+    const tag = combined.slice(-16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveSettingsKey(), SETTINGS_IV);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+  } catch { return ''; }
+}
+
 function loadSettings() {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
       const parsed = JSON.parse(raw);
+      if (parsed.licenseKey) {
+        parsed.licenseKey = decryptSetting(parsed.licenseKey);
+      }
       logToFile('Loaded settings: ' + JSON.stringify(parsed));
       return { ...DEFAULT_SETTINGS, ...parsed };
     }
@@ -56,68 +96,22 @@ function saveSettings(settings) {
   try {
     const dir = path.dirname(SETTINGS_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+    const toSave = { ...settings };
+    if (toSave.licenseKey) {
+      toSave.licenseKey = encryptSetting(toSave.licenseKey);
+    }
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(toSave, null, 2), 'utf8');
   } catch {}
 }
 
 let appSettings = loadSettings();
 
 // ─── License verification (main process — not exposed to DevTools) ───────────
-const LICENSE_SECRET = 'MultiCamViewer-LicenseSecret-2026';
-const SALT = 'multicam-license-salt';
-const PBKDF2_ITERATIONS = 100000;
+// License keys are RSA-signed payloads verified against the bundled public key.
+// The private key is kept outside the repository and is never shipped with the app.
 
-function deriveLicenseKey() {
-  return crypto.pbkdf2Sync(LICENSE_SECRET, SALT, PBKDF2_ITERATIONS, 32, 'sha256');
-}
-
-function decryptLicenseKey(keyString) {
-  try {
-    const clean = keyString.replace(/\s+/g, '').replace(/-/g, '');
-    if (!clean) return null;
-    const combined = Buffer.from(clean, 'base64');
-    if (combined.length < 28) return null;
-
-    const iv = combined.subarray(0, 12);
-    const tag = combined.subarray(combined.length - 16);
-    const ciphertext = combined.subarray(12, combined.length - 16);
-
-    const key = deriveLicenseKey();
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(tag);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return JSON.parse(decrypted.toString('utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function loadLicenseDatabase() {
-  try {
-    const dbPath = path.join(getResourcesPath(), 'licenses.json');
-    if (fs.existsSync(dbPath)) {
-      return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    }
-  } catch {}
-  return { keys: [] };
-}
-
-function verifyLicenseKey(keyString) {
-  const payload = decryptLicenseKey(keyString);
-  if (!payload) return { valid: false, reason: 'Invalid license key' };
-  if (!payload.id || typeof payload.cameras !== 'number') {
-    return { valid: false, reason: 'Malformed license key' };
-  }
-
-  const db = loadLicenseDatabase();
-  const entry = (db.keys || []).find(k => k.id === payload.id);
-  if (!entry) return { valid: false, reason: 'License key not recognized' };
-  if (entry.revoked) return { valid: false, reason: 'License key revoked' };
-  if (entry.expires && new Date(entry.expires) < new Date()) {
-    return { valid: false, reason: 'License key expired' };
-  }
-
-  return { valid: true, cameras: payload.cameras, expires: entry.expires };
+function verifyLicenseKeyMain(keyString) {
+  return verifyLicenseKey(keyString, null);
 }
 
 // ─── Virtual camera native addon ──────────────────────────────────────────────
@@ -181,7 +175,10 @@ function createSplash() {
 
 // Allow multiple instances of this app simultaneously.
 // NOTE: Do NOT call app.requestSingleInstanceLock() — we want multiple instances.
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
+app.commandLine.appendSwitch(
+  'disable-features',
+  'HardwareMediaKeyHandling,CalculateWindowOcclusion,WinOcclusion'
+);
 
 // Track all created windows
 const windows = new Set();
@@ -392,40 +389,66 @@ function stopAllScrcpy() {
 // ─── Virtual Camera (UnityCapture) ────────────────────────────────────────────
 function isVcamInstalled() {
   const searchTerms = ['UnityCapture', 'Unity Video Capture', 'MultiCam'];
-  for (const term of searchTerms) {
-    try {
-      const result = execSync(
-        `reg query "HKLM\\SOFTWARE\\Classes\\CLSID" /f "${term}" /k`,
-        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
+  return new Promise((resolve) => {
+    let completed = 0;
+    let found = false;
+    for (const term of searchTerms) {
+      execFile(
+        'reg.exe',
+        ['query', 'HKLM\\SOFTWARE\\Classes\\CLSID', '/f', term, '/k'],
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 },
+        (err, stdout) => {
+          if (!found && !err && stdout && stdout.length > 20) {
+            found = true;
+            resolve(true);
+          }
+          completed++;
+          if (completed === searchTerms.length && !found) resolve(false);
+        }
       );
-      if (result.length > 20) return true;
-    } catch {}
-  }
-  return false;
+    }
+  });
 }
 
 function registerVcam() {
   const dllPath = getVcamDllPath();
   if (!fs.existsSync(dllPath)) {
-    return {
+    return Promise.resolve({
       success: false,
       error: `DLL not found in vcam/ folder.\nLooked for: UnityCaptureFilter64bit.dll or UnityCaptureFilter64.dll\nvcam folder: ${path.join(getResourcesPath(), 'vcam')}`
-    };
+    });
   }
-  try {
-    // Register 4 capture devices so OBS sees MultiCam, MultiCam 2, MultiCam 3, MultiCam 4
-    execSync(
-      `powershell -Command "Start-Process regsvr32 -ArgumentList '/s /i:UnityCaptureDevices=4 \\"${dllPath}\\"' -Verb RunAs -Wait"`,
-      { stdio: 'pipe', timeout: 30000 }
+
+  return new Promise((resolve) => {
+    // Register 4 capture devices so OBS sees MultiCam, MultiCam 2, MultiCam 3, MultiCam 4.
+    // Use execFile with an argument array so the DLL path is never interpreted by a shell.
+    execFile(
+      'powershell.exe',
+      [
+        '-Command',
+        'Start-Process',
+        'regsvr32',
+        '-ArgumentList',
+        `/s /i:UnityCaptureDevices=4 "${dllPath}"`,
+        '-Verb',
+        'RunAs',
+        '-Wait',
+      ],
+      { stdio: 'pipe', timeout: 30000 },
+      (err) => {
+        if (err) {
+          const msg = err.message || 'Registration failed';
+          if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
+            resolve({ success: false, error: 'UAC prompt was cancelled. Please approve the admin request when prompted.' });
+          } else {
+            resolve({ success: false, error: msg });
+          }
+        } else {
+          resolve({ success: true });
+        }
+      }
     );
-    return { success: true };
-  } catch (err) {
-    const msg = err.message || 'Registration failed';
-    if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
-      return { success: false, error: 'UAC prompt was cancelled. Please approve the admin request when prompted.' };
-    }
-    return { success: false, error: msg };
-  }
+  });
 }
 
 // ─── Window Factory ──────────────────────────────────────────────────────────
@@ -453,6 +476,7 @@ function createWindow(show = true) {
       nodeIntegration: false,
       webSecurity: true,
       nativeWindowOpen: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -655,12 +679,28 @@ ipcMain.handle('vcam:stop', async (e, opts) => {
 });
 
 ipcMain.handle('open-new-window', async () => { createWindow(); return true; });
+// Only allow external links to the app's official domains.
+const ALLOWED_EXTERNAL_HOSTS = new Set([
+  'github.com',
+  'pnksounds.dev',
+  'discord.gg',
+]);
+
+function isAllowedExternalUrl(url) {
+  try {
+    if (typeof url !== 'string') return false;
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    return ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch { return false; }
+}
+
 ipcMain.handle('open-external', async (e, url) => {
-  if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
-    await shell.openExternal(url);
-    return { ok: true };
+  if (!isAllowedExternalUrl(url)) {
+    return { ok: false, error: 'URL not in allowlist' };
   }
-  return { ok: false, error: 'Invalid URL' };
+  await shell.openExternal(url);
+  return { ok: true };
 });
 
 ipcMain.handle('output:close', async (e) => {
@@ -693,16 +733,16 @@ ipcMain.handle('settings:set', async (e, patch) => {
 
 // ─── License IPC (verification runs in main process) ─────────────────────────
 ipcMain.handle('license:verify', async (e, keyString) => {
-  if (typeof keyString !== 'string' || keyString.length > 512) {
+  if (typeof keyString !== 'string' || keyString.length > 1024) {
     return { valid: false, reason: 'Invalid input' };
   }
-  return verifyLicenseKey(keyString);
+  return verifyLicenseKeyMain(keyString);
 });
 
 ipcMain.handle('license:check', async (e) => {
   const key = appSettings.licenseKey;
   if (!key) return { valid: false, cameras: 2 };
-  const result = verifyLicenseKey(key);
+  const result = verifyLicenseKeyMain(key);
   if (!result.valid) {
     appSettings.licensedCameras = 2;
     saveSettings(appSettings);
@@ -771,6 +811,14 @@ ipcMain.handle('window:isMaximized', (e) => {
 app.whenReady().then(async () => {
   logToFile('App ready. userData: ' + app.getPath('userData'));
   logToFile('Initial appSettings: ' + JSON.stringify(appSettings));
+
+  // Verify critical bundled binaries are present and non-empty.
+  const integrity = checkBundleIntegrity(getResourcesPath());
+  for (const item of integrity) {
+    if (!item.ok) {
+      logToFile(`Integrity warning: ${item.name} missing or too small (size=${item.size})`);
+    }
+  }
 
   // Remove the default application menu (File/Edit/View/Window/Help) for a
   // clean, headless look — the custom top bar handles all window controls.

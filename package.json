@@ -1,6 +1,6 @@
 {
   "name": "multi-cam-viewer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-phone USB webcam viewer with virtual camera output",
   "main": "main.js",
   "scripts": {
@@ -40,7 +40,6 @@
       "styles.css",
       "output.html",
       "output-renderer.js",
-      "licenses.json",
       "assets/**/*",
       "vendor/**/*",
       "vcam-native/**/*",

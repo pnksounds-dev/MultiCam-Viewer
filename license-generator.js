@@ -1,48 +1,22 @@
 'use strict';
 
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+/**
+ * license-generator.js
+ *
+ * Issues signed license keys for MultiCam Viewer using the RSA private key.
+ * The private key must be kept in .license-private/private-key.pem or supplied
+ * via the LICENSE_PRIVATE_KEY_PEM environment variable. It is never committed.
+ */
+
 const readline = require('readline');
+const {
+  signLicense,
+  generateLicenseId,
+  loadLicenseDatabase,
+  saveLicenseDatabase,
+} = require('./lib/license');
 
-const LICENSE_SECRET = 'MultiCamViewer-LicenseSecret-2026';
-const SALT = 'multicam-license-salt';
-const PBKDF2_ITERATIONS = 100000;
-const DB_FILE = path.join(__dirname, 'licenses.json');
-
-function deriveKey() {
-  return crypto.pbkdf2Sync(LICENSE_SECRET, SALT, PBKDF2_ITERATIONS, 32, 'sha256');
-}
-
-function generateId() {
-  return crypto.randomBytes(8).toString('hex');
-}
-
-function encryptLicense(payload) {
-  const key = deriveKey();
-  const iv = crypto.randomBytes(12);
-  const data = Buffer.from(JSON.stringify(payload));
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  const combined = Buffer.concat([iv, encrypted, tag]);
-  return combined.toString('base64');
-}
-
-function loadDb() {
-  if (fs.existsSync(DB_FILE)) {
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  }
-  return { keys: [] };
-}
-
-function saveDb(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
-function formatKey(base64) {
-  return base64.replace(/(.{4})/g, '$1-').replace(/-$/, '');
-}
+const DB_FILE = require('path').join(__dirname, '.license-private', 'licenses.json');
 
 async function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -53,7 +27,7 @@ async function ask(question) {
 }
 
 async function main() {
-  console.log('MultiCam Viewer License Key Generator\n');
+  console.log('MultiCam Viewer License Key Generator (RSA-signed)\n');
   const cameras = parseInt(await ask('Number of cameras (max): '), 10) || 4;
   const months = parseInt(await ask('Validity in months (0 = no expiry): '), 10);
   const note = await ask('Note (optional): ');
@@ -62,12 +36,13 @@ async function main() {
     ? new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
-  const id = generateId();
+  const id = generateLicenseId();
   const payload = { id, cameras, created: new Date().toISOString() };
-  const key = encryptLicense(payload);
-  const formattedKey = formatKey(key);
+  if (expires) payload.expires = expires;
 
-  const db = loadDb();
+  const formattedKey = signLicense(payload);
+
+  const db = loadLicenseDatabase(DB_FILE);
   db.keys.push({
     id,
     key: formattedKey,
@@ -77,11 +52,12 @@ async function main() {
     created: payload.created,
     revoked: false,
   });
-  saveDb(db);
+  saveLicenseDatabase(db, DB_FILE);
 
   console.log('\n--- Generated license key ---');
   console.log(formattedKey);
-  console.log('\nThis key has been saved to licenses.json');
+  console.log('\nThis key has been saved to .license-private/licenses.json');
+  console.log('Keep the private key secret; the public key is bundled in assets/public-key.pem.');
 }
 
 main().catch(err => {

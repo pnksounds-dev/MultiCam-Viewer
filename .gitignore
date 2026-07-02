@@ -17,6 +17,15 @@ tools/
 .env.local
 .env.*.local
 
+# License / secrets
+Keys/
+licenses.json
+license-keys.txt
+*.pem
+!assets/public-key.pem
+.license-private/
+.obf-backup/
+
 # Logs
 logs/
 *.log

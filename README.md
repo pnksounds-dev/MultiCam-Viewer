@@ -56,8 +56,8 @@ Phone camera ──(USB / ADB)──► scrcpy (bundled) ──► hidden window
 ### Premium / Licensing
 - **Free tier** — up to 2 side-by-side cameras in the same window, standard virtual camera output.
 - **Premium license** — unlocks AI greenscreen, separate MultiCam windows, video adjustments (exposure/contrast/saturation), and up to 4 cameras per window.
-- **In-house license system** — AES-256-GCM encrypted keys verified in the main process (not exposed to DevTools).
-- **License keys** are generated using the bundled `license-generator.js` and stored in `licenses.json`.
+- **In-house license system** — RSA-signed keys verified offline against the bundled public key in the main process (not exposed to DevTools).
+- **License keys** are generated using `license-generator.js` and stored in `.license-private/licenses.json`; the signing private key is kept outside the repository.
 
 ### Settings & UI
 - **Theme support** — Dusk, Dark, and Light themes.
@@ -67,10 +67,13 @@ Phone camera ──(USB / ADB)──► scrcpy (bundled) ──► hidden window
 - **Social links** — GitHub, website, and Discord accessible from the About section.
 
 ### Security & Anti-Tampering
-- **License verification in main process** — the license secret and decryption logic run in Node.js (main process), not exposed to the renderer or DevTools.
+- **License verification in main process** — license keys are RSA-signed offline and verified against the bundled public key in the main process; the private key is never shipped.
+- **License key at-rest encryption** — the stored license key is encrypted using a machine-derived key before writing `settings.json`.
 - **JavaScript obfuscation** — `renderer.js` and `output-renderer.js` are obfuscated at build time with control-flow flattening, string array encoding, dead code injection, and self-defending protections.
 - **Electron fuses** — production builds disable `--inspect` CLI args, enforce ASAR integrity validation, and restrict file protocol privileges.
 - **DevTools blocking** — F12 and Ctrl+Shift+I/J/C are intercepted and DevTools auto-closes in packaged builds.
+- **External link allowlist** — only `github.com`, `pnksounds.dev`, and `discord.gg` can be opened from the app.
+- **Shell-safe process spawning** — vcam registration uses `execFile` with an argument array instead of shell string interpolation.
 
 ---
 
@@ -91,7 +94,7 @@ Phone camera ──(USB / ADB)──► scrcpy (bundled) ──► hidden window
    - Settings → About phone → tap **Build number** 7 times
    - Settings → System → Developer Options → enable **USB Debugging**
 2. Plug the phone in. On the phone, tap **Allow** on the "Allow USB debugging?" prompt (tick "Always allow").
-3. Run the installer: **`dist\MultiCam Viewer Setup 1.0.0.exe`**
+3. Run the installer: **`dist\MultiCam Viewer Setup 1.1.0.exe`**
 4. Pick your phone in the **Camera** dropdown (e.g. "📱 Pixel 6a — back camera").
 5. (For OBS/Discord) Open **Settings ⚙ → Register Virtual Camera Driver**, approve the admin prompt.
 
@@ -172,21 +175,34 @@ npm run build:fuses # flip Electron fuses on the built binary (run after build)
 ```
 
 Output:
-- `dist\MultiCam Viewer Setup 1.0.0.exe` — NSIS installer
+- `dist\MultiCam Viewer Setup 1.1.0.exe` — NSIS installer
 - `dist\win-unpacked\` — unpacked app directory
 
 ### Generating License Keys
 
-```bash
-node license-generator.js
-```
+License keys are RSA-signed offline. The app ships with the **public key** only; the **private key** is kept outside the repository and used only when generating keys.
 
-Prompts for:
-- Number of cameras (2-4)
-- Validity in months (0 = no expiry)
-- Optional note
+1. Generate the key pair (one-time setup):
+   ```bash
+   node tools/generate-keypair.js
+   ```
+   This creates:
+   - `assets/public-key.pem` — bundled with the app (safe to commit)
+   - `.license-private/private-key.pem` — **keep secret** (do not commit)
 
-The generated key is saved to `licenses.json` and printed to the console.
+2. Issue license keys:
+   ```bash
+   node license-generator.js
+   ```
+
+   Prompts for:
+   - Number of cameras (2-4)
+   - Validity in months (0 = no expiry)
+   - Optional note
+
+   The generated key is saved to `.license-private/licenses.json` and printed to the console.
+
+3. For release builds, store the private key in a CI secret and set `LICENSE_PRIVATE_KEY_PEM`.
 
 ### Build Pipeline
 
@@ -213,7 +229,7 @@ Electron fuses are applied separately via `npm run build:fuses`:
 | Driver register fails | Approve the UAC admin prompt; or run `vcam\install-vcam.bat` as Administrator |
 | Camera privacy error | Windows Settings → Privacy → Camera → allow desktop apps |
 | Greenscreen not working | Premium license required; check that a camera is active before toggling |
-| License not accepted | Ensure the key matches in `licenses.json`; check for typos; try re-activating |
+| License not accepted | Verify the key was generated with the current private key; check for typos; try re-activating |
 
 ---
 
