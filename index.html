@@ -232,6 +232,44 @@
         </section>
 
         <section>
+          <h3>Forum Account <span class="help-tip" data-help="Sign in with your pnksounds.dev forum account. The forum is the identity provider — register on the forum website first.">?</span></h3>
+
+          <!-- Logged-out: login form -->
+          <div id="forum-login-form">
+            <div class="settings-input-wrap">
+              <span>Email</span>
+              <input type="text" id="forum-email-input" placeholder="your@email.com" autocomplete="off">
+            </div>
+            <div class="settings-input-wrap">
+              <span>Password</span>
+              <input type="password" id="forum-password-input" placeholder="Forum password" autocomplete="off">
+            </div>
+            <div class="settings-button-row">
+              <button id="btn-forum-login">Sign In</button>
+              <button id="btn-forum-register" class="link-btn">Register</button>
+            </div>
+            <p id="forum-login-status" class="forum-status"></p>
+            <p class="note"><a href="#" id="link-forum-reset">Forgot password?</a></p>
+          </div>
+
+          <!-- Logged-in: profile display -->
+          <div id="forum-profile" class="hidden">
+            <div class="forum-profile-row">
+              <img id="forum-avatar" class="forum-avatar" src="" alt="" hidden>
+              <div class="forum-profile-info">
+                <span id="forum-username" class="forum-username"></span>
+                <span id="forum-email" class="forum-email"></span>
+                <span id="forum-role-badge" class="forum-role-badge hidden"></span>
+                <span id="forum-premium-badge" class="forum-premium-badge hidden">Premium</span>
+              </div>
+            </div>
+            <div class="settings-button-row">
+              <button id="btn-forum-logout">Sign Out</button>
+            </div>
+          </div>
+        </section>
+
+        <section>
           <h3>Premium License <span class="help-tip" data-help="Premium unlocks up to 4 cameras, AI green screen, and video adjustments (exposure, contrast, saturation, edge threshold).">?</span></h3>
           <p id="premium-status-text">Free plan: up to 2 cameras</p>
           <div class="settings-input-wrap">

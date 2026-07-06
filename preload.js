@@ -50,6 +50,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   verifyLicenseKey: (key) => ipcRenderer.invoke('license:verify', key),
   checkLicense:     ()  => ipcRenderer.invoke('license:check'),
 
+  // ── Forum account (login runs in main process, JWT stored via safeStorage) ──
+  forumLogin:       (email, password) => ipcRenderer.invoke('forum:login', { email, password }),
+  forumLogout:      () => ipcRenderer.invoke('forum:logout'),
+  forumGetSession:  () => ipcRenderer.invoke('forum:getSession'),
+  forumGetRegisterUrl: () => ipcRenderer.invoke('forum:getRegisterUrl'),
+  forumGetResetUrl:    () => ipcRenderer.invoke('forum:getResetUrl'),
+  forumCheckPremium:   () => ipcRenderer.invoke('forum:checkPremium'),
+
   // ── App info ──
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   quitApp:       () => ipcRenderer.invoke('app:quit'),

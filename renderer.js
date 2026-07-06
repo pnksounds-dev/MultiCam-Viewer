@@ -60,6 +60,22 @@ const licenseKeyInput = document.getElementById('license-key-input');
 const btnActivateLicense = document.getElementById('btn-activate-license');
 const btnClearLicense = document.getElementById('btn-clear-license');
 
+// ─── Forum account DOM refs ──────────────────────────────────────────────────
+const forumLoginForm    = document.getElementById('forum-login-form');
+const forumProfile      = document.getElementById('forum-profile');
+const forumEmailInput   = document.getElementById('forum-email-input');
+const forumPasswordInput = document.getElementById('forum-password-input');
+const btnForumLogin     = document.getElementById('btn-forum-login');
+const btnForumRegister  = document.getElementById('btn-forum-register');
+const btnForumLogout    = document.getElementById('btn-forum-logout');
+const forumLoginStatus  = document.getElementById('forum-login-status');
+const forumAvatar       = document.getElementById('forum-avatar');
+const forumUsername     = document.getElementById('forum-username');
+const forumEmailLabel   = document.getElementById('forum-email');
+const forumRoleBadge    = document.getElementById('forum-role-badge');
+const forumPremiumBadge = document.getElementById('forum-premium-badge');
+const linkForumReset    = document.getElementById('link-forum-reset');
+
 // ─── About / social DOM refs ─────────────────────────────────────────────────
 const appVersionDisplay = document.getElementById('app-version-display');
 const linkGithub        = document.getElementById('link-github');
@@ -159,6 +175,7 @@ let nextPaneId = 1;
 // ─── Premium license state ───────────────────────────────────────────────────
 let licensedCameras = 2; // 2 for free, 4 when a valid license is activated
 let currentLicenseKey = '';
+let forumPremium = false; // true when the forum admin granted premium for this user
 
 // ─── Green screen state ───────────────────────────────────────────────────────
 let greenscreenEnabled = false;
@@ -301,6 +318,8 @@ async function init() {
       const settings = await window.electronAPI.getSettings();
       if (settings) applySettings(settings);
     } catch {}
+    // Restore forum session (if still valid)
+    checkForumSession();
   }
 
   await refreshSources();
@@ -634,9 +653,9 @@ function updateCameraGrid() {
 function addSecondaryPane() {
   newCameraDropdown.classList.add('hidden');
   const total = 1 + secondaryPanes.length;
-  const maxPanes = licensedCameras || 2; // 2 free, 4 with premium license
+  const maxPanes = isPremium() ? 4 : 2; // 2 free, 4 with premium (license or forum)
   if (total >= maxPanes) {
-    if (licensedCameras <= 2) {
+    if (!isPremium()) {
       statusText.textContent = 'Upgrade to Premium to add more than 2 cameras';
       settingsOverlay.classList.remove('hidden');
     } else {
@@ -792,13 +811,16 @@ function closeAllSecondaryPanes() {
 }
 
 function isPremium() {
-  return licensedCameras > 2;
+  return licensedCameras > 2 || forumPremium;
 }
 
 function updatePremiumUI() {
   if (!premiumStatusText) return;
   if (isPremium()) {
-    premiumStatusText.textContent = `Premium active: up to ${licensedCameras} cameras`;
+    const cams = (forumPremium || licensedCameras > 2) ? 4 : 2;
+    let label = `Premium active: up to ${cams} cameras`;
+    if (forumPremium && licensedCameras <= 2) label += ' (forum account)';
+    premiumStatusText.textContent = label;
     premiumStatusText.style.color = 'var(--green)';
   } else {
     premiumStatusText.textContent = 'Free plan: up to 2 cameras';
@@ -891,6 +913,143 @@ function applyLicenseSettings(settings) {
         }
       });
   }
+}
+
+// ─── Forum account ───────────────────────────────────────────────────────────
+// The forum at pnksounds.dev is the identity provider. Login runs in the main
+// process; the JWT is persisted there via Electron safeStorage. The renderer
+// only receives the public user profile (never the raw token) unless a future
+// Supabase integration needs it.
+
+let forumUser = null; // current ForumUser or null
+
+function renderForumProfile(user) {
+  forumUser = user;
+  if (!user) {
+    forumLoginForm.classList.remove('hidden');
+    forumProfile.classList.add('hidden');
+    forumEmailInput.value = '';
+    forumPasswordInput.value = '';
+    forumLoginStatus.textContent = '';
+    forumLoginStatus.classList.remove('error', 'success');
+    return;
+  }
+  forumLoginForm.classList.add('hidden');
+  forumProfile.classList.remove('hidden');
+  forumUsername.textContent = user.username || 'Forum user';
+  forumEmailLabel.textContent = user.email || '';
+  if (user.avatar) {
+    forumAvatar.src = user.avatar;
+    forumAvatar.hidden = false;
+  } else {
+    forumAvatar.hidden = true;
+    forumAvatar.removeAttribute('src');
+  }
+  // Role badge
+  let role = '';
+  if (user.isAdmin) role = 'Admin';
+  else if (user.isStaff) role = 'Staff';
+  if (role) {
+    forumRoleBadge.textContent = role;
+    forumRoleBadge.classList.remove('hidden');
+  } else {
+    forumRoleBadge.classList.add('hidden');
+    forumRoleBadge.textContent = '';
+  }
+}
+
+async function checkForumSession() {
+  if (!window.electronAPI || !window.electronAPI.forumGetSession) return;
+  try {
+    const result = await window.electronAPI.forumGetSession();
+    if (result && result.ok && result.user) {
+      renderForumProfile(result.user);
+      // Check premium entitlement now that we have a session.
+      await checkForumPremium();
+    } else {
+      renderForumProfile(null);
+      forumPremium = false;
+      updatePremiumUI();
+    }
+  } catch (err) {
+    console.warn('[forum] session restore failed:', err);
+  }
+}
+
+// Query the app_entitlements table (via the forum JWT + Supabase RLS) to see
+// if the admin has granted premium for this app. Either a forum entitlement OR
+// a valid license key unlocks premium.
+async function checkForumPremium() {
+  if (!window.electronAPI || !window.electronAPI.forumCheckPremium) return;
+  try {
+    const result = await window.electronAPI.forumCheckPremium();
+    const wasPremium = isPremium();
+    forumPremium = !!(result && result.premium);
+    if (forumPremiumBadge) forumPremiumBadge.classList.toggle('hidden', !forumPremium);
+    updatePremiumUI();
+    // If premium was just granted via forum, make sure greenscreen can be used.
+    if (!wasPremium && isPremium() && greenscreenEnabled) {
+      initSegmentation();
+    }
+  } catch (err) {
+    console.warn('[forum] premium check failed:', err);
+  }
+}
+
+async function doForumLogin() {
+  const email = forumEmailInput.value.trim();
+  const password = forumPasswordInput.value;
+  if (!email || !password) {
+    forumLoginStatus.textContent = 'Enter your email and password.';
+    forumLoginStatus.classList.add('error');
+    forumLoginStatus.classList.remove('success');
+    return;
+  }
+  btnForumLogin.disabled = true;
+  forumLoginStatus.textContent = 'Signing in…';
+  forumLoginStatus.classList.remove('error', 'success');
+  try {
+    const result = await window.electronAPI.forumLogin(email, password);
+    if (result && result.ok && result.user) {
+      forumLoginStatus.textContent = '';
+      forumPasswordInput.value = '';
+      renderForumProfile(result.user);
+      // Check premium entitlement immediately after login.
+      await checkForumPremium();
+    } else {
+      forumLoginStatus.textContent = (result && result.error) || 'Login failed.';
+      forumLoginStatus.classList.add('error');
+    }
+  } catch (err) {
+    forumLoginStatus.textContent = err.message || 'Login failed.';
+    forumLoginStatus.classList.add('error');
+  } finally {
+    btnForumLogin.disabled = false;
+  }
+}
+
+async function doForumLogout() {
+  try {
+    await window.electronAPI.forumLogout();
+  } catch {}
+  forumPremium = false;
+  if (forumPremiumBadge) forumPremiumBadge.classList.add('hidden');
+  updatePremiumUI();
+  renderForumProfile(null);
+}
+
+async function openForumRegister() {
+  try {
+    const url = await window.electronAPI.forumGetRegisterUrl();
+    if (url) window.electronAPI.openExternal(url);
+  } catch {}
+}
+
+async function openForumReset() {
+  try {
+    const url = await window.electronAPI.forumGetResetUrl();
+    if (url) window.electronAPI.openExternal(url);
+  } catch {}
 }
 
 function toggleNewCameraDropdown() {
@@ -1606,6 +1765,18 @@ btnInstallVcam.addEventListener('click', installVcamDriver);
 btnInstallVcamSettings.addEventListener('click', installVcamDriver);
 btnActivateLicense.addEventListener('click', activateLicense);
 btnClearLicense.addEventListener('click', clearLicense);
+
+// ─── Forum account event listeners ───────────────────────────────────────────
+btnForumLogin.addEventListener('click', doForumLogin);
+btnForumLogout.addEventListener('click', doForumLogout);
+btnForumRegister.addEventListener('click', openForumRegister);
+linkForumReset.addEventListener('click', (e) => { e.preventDefault(); openForumReset(); });
+forumPasswordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doForumLogin();
+});
+forumEmailInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') forumPasswordInput.focus();
+});
 
 // ─── About / social links ────────────────────────────────────────────────────
 if (window.electronAPI) {
