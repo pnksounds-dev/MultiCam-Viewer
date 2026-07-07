@@ -1,18 +1,18 @@
-﻿const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // ÔöÇÔöÇ Phone (ADB) detection ÔöÇÔöÇ
+  // ── Phone (ADB) detection ──
   listPhones:        () => ipcRenderer.invoke('phones:list'),
   listPhoneCameras:  (serial) => ipcRenderer.invoke('phones:cameras', serial),
 
-  // ÔöÇÔöÇ scrcpy camera capture ÔöÇÔöÇ
+  // ── scrcpy camera capture ──
   startScrcpy:       (opts) => ipcRenderer.invoke('scrcpy:start', opts),
   stopScrcpy:        (windowTitle) => ipcRenderer.invoke('scrcpy:stop', windowTitle),
   findCaptureWindow: (windowTitle) => ipcRenderer.invoke('capture:findWindow', windowTitle),
   onScrcpyExited:    (cb) => ipcRenderer.on('scrcpy-exited', (e, data) => cb(data)),
   onScrcpyLog:       (cb) => ipcRenderer.on('scrcpy-log', (e, data) => cb(data)),
 
-  // ÔöÇÔöÇ Virtual camera driver ÔöÇÔöÇ
+  // ── Virtual camera driver ──
   checkVcam:    () => ipcRenderer.invoke('vcam-check'),
   registerVcam: () => ipcRenderer.invoke('vcam-register'),
   vcamAvailable: () => ipcRenderer.invoke('vcam:available'),
@@ -20,14 +20,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vcamFrame:    (opts) => ipcRenderer.invoke('vcam:frame', opts),
   vcamStop:     (opts) => ipcRenderer.invoke('vcam:stop', opts),
 
-  // ÔöÇÔöÇ Windows / dialogs ÔöÇÔöÇ
+  // ── Windows / dialogs ──
   openNewWindow:  () => ipcRenderer.invoke('open-new-window'),
   closeOutputWindow: () => ipcRenderer.invoke('output:close'),
   moveOutputWindow: (dx, dy) => ipcRenderer.invoke('output:move', { dx, dy }),
   showDialog:     (opts) => ipcRenderer.invoke('show-dialog', opts),
   openExternal:   (url) => ipcRenderer.invoke('open-external', url),
 
-  // ÔöÇÔöÇ Window controls (custom title bar in frameless mode) ÔöÇÔöÇ
+  // ── Window controls (custom title bar in frameless mode) ──
   windowMinimize:        () => ipcRenderer.invoke('window:minimize'),
   windowToggleMaximize:  () => ipcRenderer.invoke('window:toggleMaximize'),
   windowIsMaximized:     () => ipcRenderer.invoke('window:isMaximized'),
@@ -37,20 +37,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window:maximizeChange', listener);
   },
 
-  // ÔöÇÔöÇ Slot assignment ÔöÇÔöÇ
+  // ── Slot assignment ──
   onVcamSlot:    (cb) => ipcRenderer.on('vcam-slot', (e, slot) => cb(slot)),
   onVcamDllPath: (cb) => ipcRenderer.on('vcam-dll-path', (e, p) => cb(p)),
   onWindowIndex: (cb) => ipcRenderer.on('window-index', (e, idx) => cb(idx)),
 
-  // ÔöÇÔöÇ Settings ÔöÇÔöÇ
+  // ── Settings ──
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
-  // ÔöÇÔöÇ License (verified in main process) ÔöÇÔöÇ
-  verifyLicenseKey: (key) => ipcRenderer.invoke('license:verify', key),
-  checkLicense:     ()  => ipcRenderer.invoke('license:check'),
-
-  // ÔöÇÔöÇ Forum account (login runs in main process, JWT stored via safeStorage) ÔöÇÔöÇ
+  // ── Forum account (login runs in main process, JWT stored via safeStorage) ──
   forumLogin:       (email, password) => ipcRenderer.invoke('forum:login', { email, password }),
   forumLogout:      () => ipcRenderer.invoke('forum:logout'),
   forumGetSession:  () => ipcRenderer.invoke('forum:getSession'),
@@ -60,7 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   forumGetAccountUrl:  () => ipcRenderer.invoke('forum:getAccountUrl'),
   forumCheckPremium:   () => ipcRenderer.invoke('forum:checkPremium'),
 
-  // ÔöÇÔöÇ App info ÔöÇÔöÇ
+  // ── App info ──
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   quitApp:       () => ipcRenderer.invoke('app:quit'),
 
