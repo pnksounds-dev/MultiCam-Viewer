@@ -21,6 +21,7 @@ const {
   clearForumSession,
   isJwtExpired,
   checkPremiumEntitlement,
+  verifyToken,
   FORUM_REGISTER_URL,
   FORUM_PASSWORD_RESET_URL,
   PRICING_URL,
@@ -507,6 +508,11 @@ function createWindow(show = true) {
 
   win.loadFile(path.join(__dirname, 'index.html'));
 
+  // Explicitly set the window title after creation. With frame:false, Windows
+  // may not reliably use the title from the BrowserWindow options, causing OBS
+  // window capture to see the wrong name.
+  win.setTitle('MultiCam Viewer');
+
   // Block DevTools in production builds to hinder tampering.
   if (app.isPackaged) {
     win.webContents.on('before-input-event', (event, input) => {
@@ -747,7 +753,8 @@ ipcMain.handle('forum:login', async (e, creds) => {
   try {
     const result = await forumLogin(email, password);
     storeSession(result.token, result.user);
-    logToFile('Forum login success for user: ' + result.user.username);
+    logToFile('Forum login success for user: ' + result.user.username +
+      ' (isAdmin=' + !!result.user.isAdmin + ', isStaff=' + !!result.user.isStaff + ')');
     return { ok: true, user: result.user };
   } catch (err) {
     logToFile('Forum login failed: ' + (err.message || err));
@@ -765,6 +772,20 @@ ipcMain.handle('forum:getSession', async () => {
   const session = restoreSession();
   if (!session) return { ok: false };
   return { ok: true, user: session.user };
+});
+
+ipcMain.handle('forum:verifyToken', async () => {
+  try {
+    const user = await verifyToken();
+    if (user) {
+      logToFile('Token verified for user: ' + user.username + ' (isAdmin=' + !!user.isAdmin + ', isStaff=' + !!user.isStaff + ')');
+      return { ok: true, user };
+    }
+    return { ok: false };
+  } catch (err) {
+    logToFile('Token verify failed: ' + (err.message || err));
+    return { ok: false };
+  }
 });
 
 ipcMain.handle('forum:getRegisterUrl', async () => FORUM_REGISTER_URL);
@@ -842,6 +863,8 @@ ipcMain.handle('window:isMaximized', (e) => {
 });
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
+app.setAppUserModelId('com.multicam.viewer');
+
 app.whenReady().then(async () => {
   logToFile('App ready. userData: ' + app.getPath('userData'));
   logToFile('Initial appSettings: ' + JSON.stringify(appSettings));

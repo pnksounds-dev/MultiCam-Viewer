@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   forumLogin:       (email, password) => ipcRenderer.invoke('forum:login', { email, password }),
   forumLogout:      () => ipcRenderer.invoke('forum:logout'),
   forumGetSession:  () => ipcRenderer.invoke('forum:getSession'),
+  forumVerifyToken: () => ipcRenderer.invoke('forum:verifyToken'),
   forumGetRegisterUrl: () => ipcRenderer.invoke('forum:getRegisterUrl'),
   forumGetResetUrl:    () => ipcRenderer.invoke('forum:getResetUrl'),
   forumGetPricingUrl:  () => ipcRenderer.invoke('forum:getPricingUrl'),

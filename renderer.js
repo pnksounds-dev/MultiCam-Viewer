@@ -398,7 +398,7 @@ async function refreshSources() {
         cameraId: cam.id,
         facing: cam.facing,
         maxRes: cam.maxRes,
-        label: `­ƒô▒ ${ph.model} — ${cam.facing} camera`,
+        label: `${ph.model} — ${cam.facing} camera`,
       });
     }
   }
@@ -449,7 +449,7 @@ async function refreshSources() {
       ? `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`
       : `${sourceOptions.length} camera${sourceOptions.length > 1 ? 's' : ''} detected`;
     statusText.textContent = adbIssues.length
-      ? `${countMsg} ┬À ${adbIssues[0].message}`
+      ? `${countMsg} · ${adbIssues[0].message}`
       : countMsg;
     hideConnectionGuide();
   }
@@ -518,7 +518,7 @@ async function startPhoneCamera(opt) {
     activeScrcpyTitle = null;
     statusText.textContent = lastScrcpyError
       ? 'scrcpy error: ' + lastScrcpyError
-      : 'Phone video window did not appear. Watch the phone for a camera/permission prompt, then Ôå╗ Refresh.';
+      : 'Phone video window did not appear. Watch the phone for a camera/permission prompt, then ↻ Refresh.';
     return;
   }
 
@@ -536,7 +536,7 @@ async function startPhoneCamera(opt) {
           },
         },
       });
-      attachStream(`${opt.model || opt.serial} ┬À ${opt.facing}`);
+      attachStream(`${opt.model || opt.serial} · ${opt.facing}`);
       return;
     } catch (err) {
       if (attempt === 2) {
@@ -592,8 +592,7 @@ function attachStream(name) {
   cameraVideo.onloadedmetadata = () => {
     const vt = currentStream.getVideoTracks()[0];
     const s  = vt.getSettings();
-    statusText.textContent = `Live: ${s.width || '?'}├ù${s.height || '?'} ┬À ${name}`;
-    document.title = `MultiCam — ${name}`;
+    statusText.textContent = `Live: ${s.width || '?'}×${s.height || '?'} · ${name}`;
     updateGreenscreenUI();
   };
   cameraVideo.onplaying = () => {
@@ -906,10 +905,22 @@ async function checkForumSession() {
 }
 
 // Query the PNKSOUNDS API to see if the user has premium for this app.
-// Admin/staff users automatically get premium. Otherwise, a Stripe subscription,
-// admin grant, or valid license key unlocks premium.
+// Admin/staff users automatically get premium. Otherwise, a Stripe subscription
+// or admin grant unlocks premium.
 async function checkForumPremium(sessionUser) {
   if (!window.electronAPI || !window.electronAPI.forumCheckPremium) return;
+
+  // If admin/staff flags aren't in the session user, try verifying the token
+  // to fetch the full user object with admin flags from the API.
+  if (sessionUser && !sessionUser.isAdmin && !sessionUser.isStaff && window.electronAPI.forumVerifyToken) {
+    try {
+      const verified = await window.electronAPI.forumVerifyToken();
+      if (verified && verified.ok && verified.user) {
+        sessionUser = verified.user;
+        renderForumProfile(sessionUser);
+      }
+    } catch {}
+  }
 
   // Auto-grant premium for admin/staff users (owner/dev access)
   if (sessionUser && (sessionUser.isAdmin || sessionUser.isStaff)) {
@@ -929,7 +940,7 @@ async function checkForumPremium(sessionUser) {
     const result = await window.electronAPI.forumCheckPremium();
     const wasPremium = isPremium();
 
-    // If not authenticated, the session expired \u2014 show login form
+    // If not authenticated, the session expired — show login form
     if (result && !result.authenticated) {
       forumPremium = false;
       forumPremiumSource = 'none';
@@ -1037,7 +1048,7 @@ function startFpsCounter() {
     const dt = (Date.now() - lastFpsTime) / 1000;
     const fps = dt > 0 ? Math.round(perfFrameCount / dt) : 0;
     fpsDisplay.textContent = PERF_HUD
-      ? `${fps} FPS ┬À ${perfReadbackMs.toFixed(1)}ms rb`
+      ? `${fps} FPS · ${perfReadbackMs.toFixed(1)}ms rb`
       : `${fps} FPS`;
     perfFrameCount = 0;
     lastFpsTime    = Date.now();
@@ -1536,7 +1547,7 @@ async function checkVirtualCameraDriver() {
       vcamDriverReady = true;
       setVcamStatus('yellow', 'Driver registered — start a camera to test the frame bridge');
       btnInstallVcam.classList.add('hidden');
-      vcamInstallStatus.textContent = 'Ô£ô Driver registered. In OBS, look for "MultiCam" under Video Capture Devices.';
+      vcamInstallStatus.textContent = '✓ Driver registered. In OBS, look for "MultiCam" under Video Capture Devices.';
       vcamInstallStatus.style.color = 'var(--green)';
       if (currentStream) startVcamOutput();
     } else {
@@ -1549,14 +1560,14 @@ async function checkVirtualCameraDriver() {
         vcamDriverReady = true;
         setVcamStatus('green', 'Virtual Camera driver registered');
         btnInstallVcam.classList.add('hidden');
-        vcamInstallStatus.textContent = 'Ô£ô Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
+        vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
         vcamInstallStatus.style.color = 'var(--green)';
         if (currentStream) startVcamOutput();
       } else {
         vcamDriverReady = false;
         setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
         btnInstallVcam.classList.remove('hidden');
-        vcamInstallStatus.textContent = 'Ô£ù ' + (r.error || 'Auto-install failed. Click below to retry.');
+        vcamInstallStatus.textContent = '✗ ' + (r.error || 'Auto-install failed. Click below to retry.');
         vcamInstallStatus.style.color = 'var(--text-muted)';
       }
     }
@@ -1580,12 +1591,12 @@ async function installVcamDriver() {
     vcamDriverReady = true;
     setVcamStatus('green', 'Virtual Camera driver registered');
     btnInstallVcam.classList.add('hidden');
-    vcamInstallStatus.textContent = 'Ô£ô Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
+    vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
     vcamInstallStatus.style.color = 'var(--green)';
     if (currentStream) startVcamOutput();
   } else {
     setVcamStatus('red', 'Registration failed');
-    vcamInstallStatus.textContent = 'Ô£ù ' + (r.error || 'Run as Administrator.');
+    vcamInstallStatus.textContent = '✗ ' + (r.error || 'Run as Administrator.');
     vcamInstallStatus.style.color = 'var(--accent)';
     btnInstallVcam.classList.remove('hidden');
   }
