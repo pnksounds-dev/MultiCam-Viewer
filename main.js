@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
+﻿const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
@@ -21,10 +21,12 @@ const {
   storeSession,
   clearForumSession,
   isJwtExpired,
+  checkPremiumEntitlement,
+  FORUM_REGISTER_URL,
   FORUM_PASSWORD_RESET_URL,
 } = require('./lib/forumAuth');
 
-// ─── Settings persistence ────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Settings persistence ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 const DEFAULT_SETTINGS = {
@@ -51,7 +53,7 @@ function logToFile(msg) {
   } catch {}
 }
 
-// ─── Settings encryption ─────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Settings encryption ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Encrypt sensitive fields (license key) at rest so the settings file is not
 // a trivially copy-pasteable credential. The key is derived from machine/user
 // context, binding the encrypted value to this PC/account.
@@ -115,7 +117,7 @@ function saveSettings(settings) {
 
 let appSettings = loadSettings();
 
-// ─── License verification (main process — not exposed to DevTools) ───────────
+// ÔöÇÔöÇÔöÇ License verification (main process ÔÇö not exposed to DevTools) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // License keys are RSA-signed payloads verified against the bundled public key.
 // The private key is kept outside the repository and is never shipped with the app.
 
@@ -123,9 +125,9 @@ function verifyLicenseKeyMain(keyString) {
   return verifyLicenseKey(keyString, null);
 }
 
-// ─── Virtual camera native addon ──────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Virtual camera native addon ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let VcamAddon = null;
-const vcamInstances = new Map(); // slot → VcamNative instance
+const vcamInstances = new Map(); // slot ÔåÆ VcamNative instance
 try {
   VcamAddon = require('./vcam-native/index.js');
   logToFile('vcam-native addon loaded successfully');
@@ -141,7 +143,7 @@ function getVcamForSlot(slot) {
   return vcamInstances.get(slot);
 }
 
-// ─── Splash Window ───────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Splash Window ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let splashWindow = null;
 
 function createSplash() {
@@ -183,7 +185,7 @@ function createSplash() {
 }
 
 // Allow multiple instances of this app simultaneously.
-// NOTE: Do NOT call app.requestSingleInstanceLock() — we want multiple instances.
+// NOTE: Do NOT call app.requestSingleInstanceLock() ÔÇö we want multiple instances.
 app.commandLine.appendSwitch(
   'disable-features',
   'HardwareMediaKeyHandling,CalculateWindowOcclusion,WinOcclusion'
@@ -196,7 +198,7 @@ const windows = new Set();
 // { title -> { proc, deviceId } }
 const scrcpyProcs = new Map();
 
-// ─── IPC input validation ────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ IPC input validation ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // The renderer is local/trusted, but validating every IPC payload ensures a
 // compromised or buggy renderer cannot pass malformed values into process
 // spawning or window operations.
@@ -206,7 +208,7 @@ const ALLOWED_PERMISSIONS = new Set(['media', 'display-capture']);
 // isValidWindowTitle, isValidResolution) now live in ./lib/parsers and are
 // imported at the top of this file so they can be unit-tested in isolation.
 
-// ─── Paths ─────────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Paths ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function getResourcesPath() {
   return app.isPackaged ? process.resourcesPath : __dirname;
 }
@@ -230,7 +232,7 @@ function getVcamDllPath() {
   return candidates[0];
 }
 
-// ─── ADB: list connected phones ───────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ ADB: list connected phones ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Parsing of `adb devices -l` and `scrcpy --list-cameras` output lives in
 // ./lib/parsers (parseAdbDevices / parseScrcpyCameras) so it can be unit-tested
 // without spawning processes. These wrappers handle the process invocation.
@@ -248,11 +250,11 @@ async function listPhones() {
   }
 }
 
-// ─── scrcpy: list cameras for a device ────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ scrcpy: list cameras for a device ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function listCameras(serial) {
   try {
     // scrcpy prints camera list to stderr and exits non-zero but still emits
-    // useful output — execFileAsyncSafe surfaces that output as success.
+    // useful output ÔÇö execFileAsyncSafe surfaces that output as success.
     const out = await execFileAsyncSafe(SCRCPY(), ['-s', serial, '--list-cameras'], 20000, true);
     return { ok: true, cameras: parseScrcpyCameras(out) };
   } catch (err) {
@@ -303,7 +305,7 @@ function execFileAsyncSafe(file, args, timeout, includeStderr = false) {
   });
 }
 
-// ─── scrcpy: start camera mirroring ───────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ scrcpy: start camera mirroring ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // IMPORTANT capture findings (Windows Graphics Capture):
 //  - The scrcpy window MUST NOT be minimized
 //  - It CAN be fully occluded or moved off-screen and still be captured
@@ -395,7 +397,7 @@ function stopAllScrcpy() {
   for (const title of [...scrcpyProcs.keys()]) stopScrcpy(title);
 }
 
-// ─── Virtual Camera (UnityCapture) ────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Virtual Camera (UnityCapture) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function isVcamInstalled() {
   const searchTerms = ['UnityCapture', 'Unity Video Capture', 'MultiCam'];
   return new Promise((resolve) => {
@@ -460,7 +462,7 @@ function registerVcam() {
   });
 }
 
-// ─── Window Factory ──────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Window Factory ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function createWindow(show = true) {
   logToFile('createWindow called with show=' + show);
   const slotIndex = windows.size % 4;
@@ -532,7 +534,7 @@ function createWindow(show = true) {
 
   // Make the output window (opened via window.open from the renderer) borderless
   // so the whole body can be used to drag it. Only allow opening the local
-  // output.html — deny any other URL.
+  // output.html ÔÇö deny any other URL.
   win.webContents.setWindowOpenHandler(({ url, features }) => {
     let isOutput = false;
     try {
@@ -593,7 +595,7 @@ function createWindow(show = true) {
   return win;
 }
 
-// ─── IPC Handlers ────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ IPC Handlers ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 ipcMain.handle('phones:list',    async () => await listPhones());
 ipcMain.handle('phones:cameras', async (e, serial) => {
   if (!isValidSerial(serial)) return { ok: false, error: 'Invalid device serial', cameras: [] };
@@ -643,7 +645,7 @@ ipcMain.handle('capture:findWindow', async (e, windowTitle) => {
 ipcMain.handle('vcam-check',    async () => isVcamInstalled());
 ipcMain.handle('vcam-register', async () => registerVcam());
 
-// ─── Virtual camera native frame writing ─────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Virtual camera native frame writing ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 ipcMain.handle('vcam:available', async () => {
   return { available: VcamAddon !== null };
 });
@@ -740,7 +742,7 @@ ipcMain.handle('settings:set', async (e, patch) => {
   return appSettings;
 });
 
-// ─── License IPC (verification runs in main process) ─────────────────────────
+// ÔöÇÔöÇÔöÇ License IPC (verification runs in main process) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 ipcMain.handle('license:verify', async (e, keyString) => {
   if (typeof keyString !== 'string' || keyString.length > 1024) {
     return { valid: false, reason: 'Invalid input' };
@@ -759,11 +761,63 @@ ipcMain.handle('license:check', async (e) => {
   return result;
 });
 
+// ÔöÇÔöÇÔöÇ Forum account IPC (login runs in main process) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// The forum at pnksounds.dev is the identity provider. The JWT + user blob is
+// persisted encrypted via Electron safeStorage (OS keychain). The renderer
+// never sees the raw JWT unless it needs it for Supabase queries.
+
+ipcMain.handle('forum:login', async (e, creds) => {
+  const email = creds && typeof creds.email === 'string' ? creds.email.trim() : '';
+  const password = creds && typeof creds.password === 'string' ? creds.password : '';
+  if (!email || !password) {
+    return { ok: false, error: 'Enter your forum email and password.' };
+  }
+  if (email.length > 256 || password.length > 256) {
+    return { ok: false, error: 'Invalid input.' };
+  }
+  try {
+    const result = await forumLogin(email, password);
+    storeSession(result.token, result.user);
+    logToFile('Forum login success for user: ' + result.user.username);
+    return { ok: true, user: result.user };
+  } catch (err) {
+    logToFile('Forum login failed: ' + (err.message || err));
+    return { ok: false, error: err.message || 'Login failed.' };
+  }
+});
+
+ipcMain.handle('forum:logout', async () => {
+  clearForumSession();
+  logToFile('Forum logout');
+  return { ok: true };
+});
+
+ipcMain.handle('forum:getSession', async () => {
+  const session = restoreSession();
+  if (!session) return { ok: false };
+  return { ok: true, user: session.user };
+});
+
+ipcMain.handle('forum:getRegisterUrl', async () => FORUM_REGISTER_URL);
+ipcMain.handle('forum:getResetUrl', async () => FORUM_PASSWORD_RESET_URL);
+
+// Check whether the logged-in forum user has premium for this app.
+// Queries the app_entitlements table in Supabase via the forum JWT (RLS).
+ipcMain.handle('forum:checkPremium', async () => {
+  try {
+    const result = await checkPremiumEntitlement();
+    return result;
+  } catch (err) {
+    logToFile('Forum premium check failed: ' + (err.message || err));
+    return { premium: false, source: 'none' };
+  }
+});
+
 ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
-// Deliberate app quit — used by the "Exit App" button in Settings so the
+// Deliberate app quit ÔÇö used by the "Exit App" button in Settings so the
 // user doesn't accidentally close the app via the taskbar/window X.
 ipcMain.handle('app:quit', async () => {
   logToFile('App quit requested via IPC');
@@ -790,7 +844,7 @@ ipcMain.handle('show-dialog', async (e, opts) => {
   return dialog.showMessageBox(win, safe);
 });
 
-// ─── Window Control IPC (for custom title bar in frameless mode) ─────────────
+// ÔöÇÔöÇÔöÇ Window Control IPC (for custom title bar in frameless mode) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // The renderer calls these from the minimize/maximize buttons in the top bar.
 // Each handler finds the BrowserWindow that sent the request via the event's
 // sender, so it works correctly for multi-window mode.
@@ -799,14 +853,38 @@ ipcMain.handle('window:minimize', (e) => {
   if (w) w.minimize();
   return true;
 });
+
+ipcMain.handle('window:toggleMaximize', (e) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w) return false;
+  if (w.isMaximized()) {
+    w.unmaximize();
+    return false;
+  }
+  w.maximize();
+  return true;
+});
+
 ipcMain.handle('window:isMaximized', (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
+  return w ? w.isMaximized() : false;
+});
+
+// ÔöÇÔöÇÔöÇ App Lifecycle ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+app.whenReady().then(async () => {
+  logToFile('App ready. userData: ' + app.getPath('userData'));
+  logToFile('Initial appSettings: ' + JSON.stringify(appSettings));
+
+  // Verify critical bundled binaries are present and non-empty.
+  const integrity = checkBundleIntegrity(getResourcesPath());
+  for (const item of integrity) {
+    if (!item.ok) {
       logToFile(`Integrity warning: ${item.name} missing or too small (size=${item.size})`);
     }
   }
 
   // Remove the default application menu (File/Edit/View/Window/Help) for a
-  // clean, headless look — the custom top bar handles all window controls.
+  // clean, headless look ÔÇö the custom top bar handles all window controls.
   Menu.setApplicationMenu(null);
 
   // Clear the disk cache so updated image assets (logo, splash) are always

@@ -1,8 +1,8 @@
-/**
- * MultiCam Viewer — Renderer Process
+﻿/**
+ * MultiCam Viewer ÔÇö Renderer Process
  *
  * Detects Android phones over USB (ADB) and captures their camera directly
- * via scrcpy — no companion app installed on the phone. The captured feed is:
+ * via scrcpy ÔÇö no companion app installed on the phone. The captured feed is:
  *   1. Shown in this window's preview
  *   2. Pushed to a UnityCapture virtual camera so OBS / Discord / etc. can use it
  *
@@ -12,7 +12,7 @@
 
 'use strict';
 
-// ─── DOM refs ─────────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ DOM refs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const deviceSelect       = document.getElementById('device-select');
 const resSelect          = document.getElementById('res-select');
 const cameraVideo        = document.getElementById('camera-video');
@@ -60,7 +60,7 @@ const licenseKeyInput = document.getElementById('license-key-input');
 const btnActivateLicense = document.getElementById('btn-activate-license');
 const btnClearLicense = document.getElementById('btn-clear-license');
 
-// ─── Forum account DOM refs ──────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Forum account DOM refs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const forumLoginForm    = document.getElementById('forum-login-form');
 const forumProfile      = document.getElementById('forum-profile');
 const forumEmailInput   = document.getElementById('forum-email-input');
@@ -73,8 +73,16 @@ const forumAvatar       = document.getElementById('forum-avatar');
 const forumUsername     = document.getElementById('forum-username');
 const forumEmailLabel   = document.getElementById('forum-email');
 const forumRoleBadge    = document.getElementById('forum-role-badge');
-const lr
-// ─── Green screen DOM refs ──────────────────────────────────────────────────
+const forumPremiumBadge = document.getElementById('forum-premium-badge');
+const linkForumReset    = document.getElementById('link-forum-reset');
+
+// ÔöÇÔöÇÔöÇ About / social DOM refs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+const appVersionDisplay = document.getElementById('app-version-display');
+const linkGithub        = document.getElementById('link-github');
+const linkWebsite       = document.getElementById('link-website');
+const linkDiscord       = document.getElementById('link-discord');
+
+// ÔöÇÔöÇÔöÇ Green screen DOM refs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const btnGreenscreen     = document.getElementById('btn-greenscreen');
 const greenscreenControls = document.getElementById('greenscreen-controls');
 const bgColorInput       = document.getElementById('bg-color');
@@ -96,7 +104,7 @@ const stContrastVal      = document.getElementById('settings-contrast-val');
 const stSaturation       = document.getElementById('settings-saturation');
 const stSaturationVal    = document.getElementById('settings-saturation-val');
 
-// ─── State ────────────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ State ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let currentStream    = null;
 let vcamSlot         = 0;
 let vcamDriverReady  = false;
@@ -105,7 +113,7 @@ let lastFpsTime      = Date.now();
 let frameHandle      = null;    // id from requestVideoFrameCallback or requestAnimationFrame
 let vcamCtx          = null;
 
-// ─── Phase 1 frame-pipeline instrumentation ───────────────────────────────────
+// ÔöÇÔöÇÔöÇ Phase 1 frame-pipeline instrumentation ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Prefer requestVideoFrameCallback so we only do a GPU readback + IPC send when
 // the source actually delivers a new video frame (instead of on every display
 // refresh, which wastes work on high-refresh-rate monitors). Falls back to
@@ -116,7 +124,7 @@ let perfFrameCount = 0;         // frames actually delivered to the vcam since l
 let perfReadbackMs = 0;         // EMA of getImageData() time (ms)
 const PERF_HUD = false;         // flip to true to show readback timing in the FPS badge
 
-// ─── Phase 2: WebGL2 GPU compositor (feature-flagged) ──────────────────────────
+// ÔöÇÔöÇÔöÇ Phase 2: WebGL2 GPU compositor (feature-flagged) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // When enabled AND available, the raw (non-greenscreen) frame path renders the
 // video through a WebGL2 shader instead of the 2D canvas. The video is uploaded
 // as a GPU texture (no CPU copy for the draw) and brightness/contrast/saturation
@@ -124,7 +132,7 @@ const PERF_HUD = false;         // flip to true to show readback timing in the F
 // (CPU composite). This is the foundation for the Phase 4 GPU effects (chroma
 // key, LUTs, multi-layer). Greenscreen still uses the 2D canvas path for now.
 //
-// DEFAULTS TO OFF — the 2D path remains the safe default until this is verified
+// DEFAULTS TO OFF ÔÇö the 2D path remains the safe default until this is verified
 // end-to-end on Windows with a real camera + OBS. Flip to true to opt in.
 const USE_WEBGL_COMPOSITOR = false;
 let glCompositor = null;        // active GlCompositor instance, or null when 2D path in use
@@ -160,17 +168,21 @@ let lastScrcpyError  = '';      // last error line from scrcpy output
 let windowIndex      = 0;       // 0-based window index (0 = first window)
 let vcamNativeReady  = false;   // true when the shared-memory frame bridge is active
 
-// ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
+// ÔöÇÔöÇÔöÇ Same-window additional camera panes (CCTV grid) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const secondaryPanes = []; // { id, element, select, video, stream, scrcpyTitle }
 let nextPaneId = 1;
 
-// ─── Premium license state ───────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Premium license state ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let licensedCameras = 2; // 2 for free, 4 when a valid license is activated
 let currentLicenseKey = '';
+let forumPremium = false; // true when the forum admin granted premium for this user
 
-
-
-
+// ÔöÇÔöÇÔöÇ Green screen state ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+let greenscreenEnabled = false;
+let bgColorValue       = '#00ff00';
+let bgImageElement     = null;
+let selfieSegmentation = null;
+let segmentationReady  = false;
 let isSegmenting       = false;
 let gsThresholdValue   = 50;
 let gsGapValue         = 0;
@@ -179,7 +191,7 @@ let gsContrastValue    = 0;
 let gsSaturationValue  = 0;
 let outputWindow       = null;
 
-// ─── Video adjustment API (used by the output window) ──────────────────────────
+// ÔöÇÔöÇÔöÇ Video adjustment API (used by the output window) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function setVideoAdjustment(name, value) {
   const val = parseInt(value, 10);
   if (name === 'exposure') gsExposureValue = val;
@@ -271,13 +283,13 @@ function saveSettingsDebounced(patch) {
   }, 150);
 }
 
-// ─── Startup ──────────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Startup ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function init() {
   if (window.electronAPI) {
     window.electronAPI.onVcamSlot((slot) => {
       vcamSlot = slot;
       const label = slotLabel(slot);
-      vcamSlotDisplay.textContent = `→ ${label}`;
+      vcamSlotDisplay.textContent = `ÔåÆ ${label}`;
       currentSlotDisplay.textContent = label;
     });
     window.electronAPI.onWindowIndex((idx) => {
@@ -306,10 +318,16 @@ async function init() {
       const settings = await window.electronAPI.getSettings();
       if (settings) applySettings(settings);
     } catch {}
+    // Restore forum session (if still valid)
+    checkForumSession();
   }
 
+  await refreshSources();
+  // Only auto-select the last used camera in the first window.
   // Additional windows start with no camera selected to avoid grabbing
   // the same device that is already in use by window 1.
+  if (windowIndex === 0) {
+    try {
       const settings = await window.electronAPI.getSettings();
       if (settings && settings.lastDeviceIndex !== '' &&
           [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
@@ -323,7 +341,7 @@ async function init() {
   // Auto-refresh when a UVC device is plugged/unplugged
   navigator.mediaDevices.addEventListener('devicechange', refreshSources);
 
-  // If no phones were found on the first scan, retry periodically — the ADB
+  // If no phones were found on the first scan, retry periodically ÔÇö the ADB
   // daemon may still be starting up after a cold reboot.
   if (sourceOptions.filter(s => s.kind === 'phone').length === 0) {
     let retries = 0;
@@ -340,7 +358,7 @@ function slotLabel(slotIdx) {
   return slotIdx === 0 ? 'MultiCam' : `MultiCam ${slotIdx + 1}`;
 }
 
-// ─── Source Enumeration (phones via ADB + real UVC cameras) ───────────────────
+// ÔöÇÔöÇÔöÇ Source Enumeration (phones via ADB + real UVC cameras) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 const VIRTUAL_OUTPUT_ONLY = [
   'unity video capture', 'multicam', 'obs virtual camera', 'obs-camera',
   'manycam virtual', 'xsplit vcam', 'nvidia broadcast', 'snap camera',
@@ -352,7 +370,7 @@ function isVirtualOutputOnly(label) {
 }
 
 async function refreshSources() {
-  statusText.textContent = 'Scanning for phones…';
+  statusText.textContent = 'Scanning for phonesÔÇª';
   sourceOptions = [];
 
   // 1) Phones over USB (ADB)
@@ -384,7 +402,7 @@ async function refreshSources() {
         cameraId: cam.id,
         facing: cam.facing,
         maxRes: cam.maxRes,
-        label: `📱 ${ph.model} — ${cam.facing} camera`,
+        label: `­ƒô▒ ${ph.model} ÔÇö ${cam.facing} camera`,
       });
     }
   }
@@ -399,7 +417,7 @@ async function refreshSources() {
           sourceOptions.push({
             kind: 'uvc',
             deviceId: d.deviceId,
-            label: '🎥 ' + (d.label || 'USB Camera'),
+            label: '­ƒÄÑ ' + (d.label || 'USB Camera'),
           });
         });
   } catch { /* camera privacy may block this; phones still work */ }
@@ -426,7 +444,7 @@ async function refreshSources() {
       statusText.textContent = adbIssues[0].message;
       showConnectionGuide();
     } else {
-      statusText.textContent = 'No phones or cameras found — see guide below';
+      statusText.textContent = 'No phones or cameras found ÔÇö see guide below';
       showConnectionGuide();
     }
   } else {
@@ -435,13 +453,13 @@ async function refreshSources() {
       ? `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`
       : `${sourceOptions.length} camera${sourceOptions.length > 1 ? 's' : ''} detected`;
     statusText.textContent = adbIssues.length
-      ? `${countMsg} · ${adbIssues[0].message}`
+      ? `${countMsg} ┬À ${adbIssues[0].message}`
       : countMsg;
     hideConnectionGuide();
   }
 }
 
-// ─── Connection Guide ─────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Connection Guide ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function showConnectionGuide() {
   document.getElementById('connection-guide')?.classList.remove('hidden');
 }
@@ -449,7 +467,7 @@ function hideConnectionGuide() {
   document.getElementById('connection-guide')?.classList.add('hidden');
 }
 
-// ─── Camera Start / Stop ──────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Camera Start / Stop ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function startSelected() {
   const idx = deviceSelect.value;
   if (idx === '' || idx === null) { stopCamera(); return; }
@@ -466,14 +484,14 @@ async function startSelected() {
   }
 }
 
-// ── Phone camera via scrcpy + desktop capture ──
+// ÔöÇÔöÇ Phone camera via scrcpy + desktop capture ÔöÇÔöÇ
 async function startPhoneCamera(opt) {
   const resolution = resSelect.value || '1280x720';
   const windowTitle = `MultiCamCap_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
   activeScrcpyTitle = windowTitle;
   lastScrcpyError = '';
 
-  statusText.textContent = `[1/3] Launching scrcpy for ${opt.model || opt.serial} (${opt.facing})…`;
+  statusText.textContent = `[1/3] Launching scrcpy for ${opt.model || opt.serial} (${opt.facing})ÔÇª`;
 
   const start = await window.electronAPI.startScrcpy({
     serial: opt.serial,
@@ -489,27 +507,27 @@ async function startPhoneCamera(opt) {
   }
 
   // Wait for the scrcpy window to appear, then capture it
-  statusText.textContent = '[2/3] Waiting for phone video window…';
+  statusText.textContent = '[2/3] Waiting for phone video windowÔÇª';
   const found = await waitForCaptureWindow(windowTitle, 15000);
   if (activeScrcpyTitle !== windowTitle) {
-    // Selection changed mid-wait — the new selection manages its own scrcpy;
+    // Selection changed mid-wait ÔÇö the new selection manages its own scrcpy;
     // make sure this orphaned one is cleaned up.
     window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
     return;
   }
   if (!found) {
-    // The scrcpy process is still running but produced no capturable window —
+    // The scrcpy process is still running but produced no capturable window ÔÇö
     // kill it so it doesn't linger invisibly off-screen.
     window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
     activeScrcpyTitle = null;
     statusText.textContent = lastScrcpyError
       ? 'scrcpy error: ' + lastScrcpyError
-      : 'Phone video window did not appear. Watch the phone for a camera/permission prompt, then ↻ Refresh.';
+      : 'Phone video window did not appear. Watch the phone for a camera/permission prompt, then Ôå╗ Refresh.';
     return;
   }
 
   // Capture the window via Windows Graphics Capture, with one retry
-  statusText.textContent = '[3/3] Connecting to video…';
+  statusText.textContent = '[3/3] Connecting to videoÔÇª';
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       currentStream = await navigator.mediaDevices.getUserMedia({
@@ -522,11 +540,11 @@ async function startPhoneCamera(opt) {
           },
         },
       });
-      attachStream(`${opt.model || opt.serial} · ${opt.facing}`);
+      attachStream(`${opt.model || opt.serial} ┬À ${opt.facing}`);
       return;
     } catch (err) {
       if (attempt === 2) {
-        // Never attached — tear down the scrcpy process we started.
+        // Never attached ÔÇö tear down the scrcpy process we started.
         window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
         activeScrcpyTitle = null;
         statusText.textContent = 'Capture error: ' + err.message;
@@ -547,11 +565,11 @@ async function waitForCaptureWindow(title, timeoutMs) {
   return null;
 }
 
-// ── Real UVC camera via getUserMedia ──
+// ÔöÇÔöÇ Real UVC camera via getUserMedia ÔöÇÔöÇ
 async function startUvcCamera(opt) {
   activeScrcpyTitle = null;
   const [w, h] = (resSelect.value || '1280x720').split('x').map(Number);
-  statusText.textContent = 'Connecting to camera…';
+  statusText.textContent = 'Connecting to cameraÔÇª';
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -562,14 +580,14 @@ async function startUvcCamera(opt) {
         frameRate: { ideal: 60, max: 60 },
       },
     });
-    attachStream(opt.label.replace(/^🎥\s*/, ''));
+    attachStream(opt.label.replace(/^­ƒÄÑ\s*/, ''));
   } catch (err) {
     statusText.textContent = 'Error: ' + err.message +
-      (err.name === 'NotAllowedError' ? ' — check Windows Camera privacy settings' : '');
+      (err.name === 'NotAllowedError' ? ' ÔÇö check Windows Camera privacy settings' : '');
   }
 }
 
-// ── Common: attach a stream to the preview + start outputs ──
+// ÔöÇÔöÇ Common: attach a stream to the preview + start outputs ÔöÇÔöÇ
 function attachStream(name) {
   cameraVideo.srcObject = currentStream;
   cameraVideo.classList.add('active');
@@ -578,8 +596,8 @@ function attachStream(name) {
   cameraVideo.onloadedmetadata = () => {
     const vt = currentStream.getVideoTracks()[0];
     const s  = vt.getSettings();
-    statusText.textContent = `Live: ${s.width || '?'}×${s.height || '?'} · ${name}`;
-    document.title = `MultiCam — ${name}`;
+    statusText.textContent = `Live: ${s.width || '?'}├ù${s.height || '?'} ┬À ${name}`;
+    document.title = `MultiCam ÔÇö ${name}`;
     updateGreenscreenUI();
   };
   cameraVideo.onplaying = () => {
@@ -608,7 +626,7 @@ function stopCamera() {
   updateGreenscreenUI();
 }
 
-// ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
+// ÔöÇÔöÇÔöÇ Same-window additional camera panes (CCTV grid) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function getSecondaryPane(id) {
   return secondaryPanes.find(p => p.id === id);
 }
@@ -635,24 +653,24 @@ function updateCameraGrid() {
 function addSecondaryPane() {
   newCameraDropdown.classList.add('hidden');
   const total = 1 + secondaryPanes.length;
-  const maxPanes = licensedCameras || 2; // 2 free, 4 with premium license
+  const maxPanes = isPremium() ? 4 : 2; // 2 free, 4 with premium (license or forum)
   if (total >= maxPanes) {
-    if (licensedCameras <= 2) {
+    if (!isPremium()) {
       statusText.textContent = 'Upgrade to Premium to add more than 2 cameras';
-      settingsOverllacenyldCaaerast||re('hidden');
+      settingsOverlay.classList.remove('hidden');
     } else {
-      stltcenuedCaxeras <= 2tContent = 'Maximum 4 cameras per window reached';
+      statusText.textContent = 'Maximum 4 cameras per window reached';
     }
-    return;lcendCaeras||
+    return;
   }
-lcendCaeras <= 2
+
   const id = nextPaneId++;
-  const clone = camlecenradCanerasl||tntent.cloneNode(true);
+  const clone = cameraPaneTemplate.content.cloneNode(true);
   const pane = clone.querySelector('.camera-pane');
-  pane.dltcenatdCa.lecenr dCa<erasS||rid);
-  pane.id = 'cameral-cenpedCa-erasd||
-  const lecenltdCa eras <= 2n.querySelector('.camera-pane-select');
-  selectlicend dCa'eras <= 2e-select-' + id;
+  pane.dataset.pane = String(id);
+  pane.id = 'camera-pane-' + id;
+  const select = pane.querySelector('.camera-pane-select');
+  select.id = 'device-select-' + id;
   const video = pane.querySelector('video');
   video.id = 'camera-video-' + id;
   const closeBtn = pane.querySelector('.btn-close-pane');
@@ -717,12 +735,12 @@ async function startSecondaryPhoneCamera(pane, opt) {
 
   const found = await waitForCaptureWindow(windowTitle, 15000);
   if (pane.scrcpyTitle !== windowTitle) {
-    // Pane selection changed mid-wait — clean up this orphaned scrcpy.
+    // Pane selection changed mid-wait ÔÇö clean up this orphaned scrcpy.
     window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
     return;
   }
   if (!found) {
-    // No capturable window appeared — kill the lingering scrcpy process.
+    // No capturable window appeared ÔÇö kill the lingering scrcpy process.
     window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
     pane.scrcpyTitle = null;
     statusText.textContent = `Camera ${pane.id} window did not appear`;
@@ -745,7 +763,7 @@ async function startSecondaryPhoneCamera(pane, opt) {
       return;
     } catch (err) {
       if (attempt === 2) {
-        // Never attached — tear down the scrcpy process we started.
+        // Never attached ÔÇö tear down the scrcpy process we started.
         window.electronAPI?.stopScrcpy(windowTitle).catch(() => {});
         pane.scrcpyTitle = null;
         statusText.textContent = `Camera ${pane.id} capture error: ` + err.message;
@@ -793,27 +811,42 @@ function closeAllSecondaryPanes() {
 }
 
 function isPremium() {
-  return licensedCameras > 2;
+  return licensedCameras > 2 || forumPremium;
 }
 
 function updatePremiumUI() {
-  if (!premiumStatusText) re
+  if (!premiumStatusText) return;
   if (isPremium()) {
-    premiumStatusText.textContent = `Premium active: up to ${licensedCameras} cameras`;
+    const cams = (forumPremium || licensedCameras > 2) ? 4 : 2;
+    let label = `Premium active: up to ${cams} cameras`;
+    if (forumPremium && licensedCameras <= 2) label += ' (forum account)';
+    premiumStatusText.textContent = label;
     premiumStatusText.style.color = 'var(--green)';
   } else {
     premiumStatusText.textContent = 'Free plan: up to 2 cameras';
- utspyle.ceSt-tumText.txtConnt}cm`
+    premiumStatusText.style.color = 'var(--text-muted)';
+  }
+  updatePremiumGating();
+}
 
-function showPremiumUpgrade(
-  statusText.textContent = message || 'Premium feature — activate a license key to unlock';
-  sepast.reStatudText.text'o
+function showPremiumUpgrade(message) {
+  statusText.textContent = message || 'Premium feature ÔÇö activate a license key to unlock';
+  settingsOverlay.classList.remove('hidden');
+}
+
+function updatePremiumGating() {
   const premium = isPremium();
   const gated = document.querySelectorAll('.premium-gated');
   gated.forEach(el => {
-    pgpremiStatu'T,xt.text!onten.qlectorAll('input, button').}cm`
+    el.classList.toggle('premium-locked', !premium);
+    el.querySelectorAll('input, button').forEach(input => { input.disabled = !premium; });
+  });
+}
 
-asynpLseOnSStatu{Txt.textont(n!.electronAPI) return;}cmou `PI.checkLicense();
+async function checkLicenseOnStartup() {
+  if (!window.electronAPI) return;
+  try {
+    const result = await window.electronAPI.checkLicense();
     if (result && result.valid) {
       licensedCameras = Math.max(2, Math.min(4, result.cameras || 4));
     } else {
@@ -882,6 +915,143 @@ function applyLicenseSettings(settings) {
   }
 }
 
+// ÔöÇÔöÇÔöÇ Forum account ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+// The forum at pnksounds.dev is the identity provider. Login runs in the main
+// process; the JWT is persisted there via Electron safeStorage. The renderer
+// only receives the public user profile (never the raw token) unless a future
+// Supabase integration needs it.
+
+let forumUser = null; // current ForumUser or null
+
+function renderForumProfile(user) {
+  forumUser = user;
+  if (!user) {
+    forumLoginForm.classList.remove('hidden');
+    forumProfile.classList.add('hidden');
+    forumEmailInput.value = '';
+    forumPasswordInput.value = '';
+    forumLoginStatus.textContent = '';
+    forumLoginStatus.classList.remove('error', 'success');
+    return;
+  }
+  forumLoginForm.classList.add('hidden');
+  forumProfile.classList.remove('hidden');
+  forumUsername.textContent = user.username || 'Forum user';
+  forumEmailLabel.textContent = user.email || '';
+  if (user.avatar) {
+    forumAvatar.src = user.avatar;
+    forumAvatar.hidden = false;
+  } else {
+    forumAvatar.hidden = true;
+    forumAvatar.removeAttribute('src');
+  }
+  // Role badge
+  let role = '';
+  if (user.isAdmin) role = 'Admin';
+  else if (user.isStaff) role = 'Staff';
+  if (role) {
+    forumRoleBadge.textContent = role;
+    forumRoleBadge.classList.remove('hidden');
+  } else {
+    forumRoleBadge.classList.add('hidden');
+    forumRoleBadge.textContent = '';
+  }
+}
+
+async function checkForumSession() {
+  if (!window.electronAPI || !window.electronAPI.forumGetSession) return;
+  try {
+    const result = await window.electronAPI.forumGetSession();
+    if (result && result.ok && result.user) {
+      renderForumProfile(result.user);
+      // Check premium entitlement now that we have a session.
+      await checkForumPremium();
+    } else {
+      renderForumProfile(null);
+      forumPremium = false;
+      updatePremiumUI();
+    }
+  } catch (err) {
+    console.warn('[forum] session restore failed:', err);
+  }
+}
+
+// Query the app_entitlements table (via the forum JWT + Supabase RLS) to see
+// if the admin has granted premium for this app. Either a forum entitlement OR
+// a valid license key unlocks premium.
+async function checkForumPremium() {
+  if (!window.electronAPI || !window.electronAPI.forumCheckPremium) return;
+  try {
+    const result = await window.electronAPI.forumCheckPremium();
+    const wasPremium = isPremium();
+    forumPremium = !!(result && result.premium);
+    if (forumPremiumBadge) forumPremiumBadge.classList.toggle('hidden', !forumPremium);
+    updatePremiumUI();
+    // If premium was just granted via forum, make sure greenscreen can be used.
+    if (!wasPremium && isPremium() && greenscreenEnabled) {
+      initSegmentation();
+    }
+  } catch (err) {
+    console.warn('[forum] premium check failed:', err);
+  }
+}
+
+async function doForumLogin() {
+  const email = forumEmailInput.value.trim();
+  const password = forumPasswordInput.value;
+  if (!email || !password) {
+    forumLoginStatus.textContent = 'Enter your email and password.';
+    forumLoginStatus.classList.add('error');
+    forumLoginStatus.classList.remove('success');
+    return;
+  }
+  btnForumLogin.disabled = true;
+  forumLoginStatus.textContent = 'Signing inÔÇª';
+  forumLoginStatus.classList.remove('error', 'success');
+  try {
+    const result = await window.electronAPI.forumLogin(email, password);
+    if (result && result.ok && result.user) {
+      forumLoginStatus.textContent = '';
+      forumPasswordInput.value = '';
+      renderForumProfile(result.user);
+      // Check premium entitlement immediately after login.
+      await checkForumPremium();
+    } else {
+      forumLoginStatus.textContent = (result && result.error) || 'Login failed.';
+      forumLoginStatus.classList.add('error');
+    }
+  } catch (err) {
+    forumLoginStatus.textContent = err.message || 'Login failed.';
+    forumLoginStatus.classList.add('error');
+  } finally {
+    btnForumLogin.disabled = false;
+  }
+}
+
+async function doForumLogout() {
+  try {
+    await window.electronAPI.forumLogout();
+  } catch {}
+  forumPremium = false;
+  if (forumPremiumBadge) forumPremiumBadge.classList.add('hidden');
+  updatePremiumUI();
+  renderForumProfile(null);
+}
+
+async function openForumRegister() {
+  try {
+    const url = await window.electronAPI.forumGetRegisterUrl();
+    if (url) window.electronAPI.openExternal(url);
+  } catch {}
+}
+
+async function openForumReset() {
+  try {
+    const url = await window.electronAPI.forumGetResetUrl();
+    if (url) window.electronAPI.openExternal(url);
+  } catch {}
+}
+
 function toggleNewCameraDropdown() {
   newCameraDropdown.classList.toggle('hidden');
 }
@@ -889,13 +1059,13 @@ function toggleNewCameraDropdown() {
 function openNewCameraSeparate() {
   newCameraDropdown.classList.add('hidden');
   if (!isPremium()) {
-    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature — activate a license key to unlock');
+    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature ÔÇö activate a license key to unlock');
     return;
   }
   window.electronAPI?.openNewWindow();
 }
 
-// ─── FPS Counter ──────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ FPS Counter ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 function startFpsCounter() {
   perfFrameCount = 0;
   lastFpsTime    = Date.now();
@@ -907,7 +1077,7 @@ function startFpsCounter() {
     const dt = (Date.now() - lastFpsTime) / 1000;
     const fps = dt > 0 ? Math.round(perfFrameCount / dt) : 0;
     fpsDisplay.textContent = PERF_HUD
-      ? `${fps} FPS · ${perfReadbackMs.toFixed(1)}ms rb`
+      ? `${fps} FPS ┬À ${perfReadbackMs.toFixed(1)}ms rb`
       : `${fps} FPS`;
     perfFrameCount = 0;
     lastFpsTime    = Date.now();
@@ -918,13 +1088,13 @@ function stopFpsCounter() {
   fpsDisplay.textContent = '';
 }
 
-// ─── Phase 2: WebGL2 GPU compositor ───────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Phase 2: WebGL2 GPU compositor ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Renders a video element to the vcam canvas via a full-screen textured quad
 // with a brightness/contrast/saturation fragment shader, then reads the pixels
 // back into a reusable top-down RGBA buffer for the virtual camera.
 //
 // Correctness notes (the fiddly WebGL Y-convention):
-//  - UNPACK_FLIP_Y_WEBGL=true on upload → the canvas renders the video
+//  - UNPACK_FLIP_Y_WEBGL=true on upload ÔåÆ the canvas renders the video
 //    right-side up (important because the output window captures this canvas).
 //  - gl.readPixels reads bottom-up (OpenGL origin is bottom-left), so the
 //    returned buffer is flipped in place to top-down row order, which is what
@@ -938,54 +1108,227 @@ out vec2 v_uv;
 void main() {
   v_uv = a_pos * 0.5 + 0.5;
   gl_Position = vec4(a_pos, 0.0, 1.0);
-t FRAG_SRC = `#version 300 es
+}`;
+
+const FRAG_SRC = `#version 300 es
 precision mediump float;
+uniform sampler2D u_tex;
+uniform float u_brightness; // 1.0 = neutral
 uniform float u_contrast;   // 1.0 = neutral
 uniform float u_saturation; // 1.0 = neutral
-in vec2 v_uv;t= apgsre
+in vec2 v_uv;
+out vec4 frag;
+vec3 adjust(vec3 c) {
+  c *= u_brightness;
+  c = (c - 0.5) * u_contrast + 0.5;
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, u_saturation);
+  return clamp(c, 0.0, 1.0);
+}
+void main() {
+  vec3 c = texture(u_tex, v_uv).rgb;
+  frag = vec4(adjust(c), 1.0);
+}`;
+
+function compileShader(gl, type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(sh);
+    gl.deleteShader(sh);
     throw new Error('Shader compile failed: ' + log);
   }
+  return sh;
+}
 
-// In-place vertical row flpath * 4;
+// In-place vertical row flip of an RGBA8 buffer (bottom-up ÔåÆ top-down).
+function flipRowsVertical(buf, width, height) {
+  const rowBytes = width * 4;
   const tmp = new Uint8Array(rowBytes);
   for (let i = 0, j = height - 1; i < j; i++, j--) {
-    const a = i * rowByte/tiotryCar ll
+    const a = i * rowBytes, b = j * rowBytes;
+    tmp.set(buf.subarray(a, a + rowBytes));
+    buf.copyWithin(a, b, b + rowBytes);
+    buf.set(tmp, b);
+  }
+}
+
+// Create a GlCompositor for the given canvas + dimensions. Returns null if
+// WebGL2 is unavailable or context/program creation fails (caller falls back to
+// the 2D canvas path).
+function tryCreateGlCompositor(canvas, width, height) {
+  let gl;
+  try {
+    gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+  } catch { gl = null; }
+  if (!gl) return null;
+  try {
+    const vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC);
+    const frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vert);
+    gl.attachShader(prog, frag);
+    gl.linkProgram(prog);
     gl.deleteShader(vert);
-    gl.deleteShader(frag);awP link failed: ' + gl.getProgramInfoLog(prog));
+    gl.deleteShader(frag);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      throw new Error('Program link failed: ' + gl.getProgramInfoLog(prog));
     }
-    // Full-teVertexArray()YRRAY_BUFFER, new Float32Array([
+    // Full-screen quad (two triangles)
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
       -1, -1,  1, -1,  -1, 1,
       -1,  1,  1, -1,   1, 1,
     ]), gl.STATIC_DRAW);
- tip
-    gl.bindTexgPatness, _uC: uContrast, _uS: uSaturation,
+    const aPos = gl.getAttribLocation(prog, 'a_pos');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    const uBrightness = gl.getUniformLocation(prog, 'u_brightness');
+    const uContrast   = gl.getUniformLocation(prog, 'u_contrast');
+    const uSaturation = gl.getUniformLocation(prog, 'u_saturation');
+
+    const readBuf = new Uint8Array(width * height * 4);
+
+    return {
+      _gl: gl,
+      _prog: prog,
+      _vao: vao,
+      _vbo: vbo,
+      _tex: tex,
+      _uB: uBrightness, _uC: uContrast, _uS: uSaturation,
+      _w: width, _h: height,
+      _readBuf: readBuf,
+      setAdjust(exposure, contrast, saturation) {
+        // Match the 2D path: 1 + value/100 (value range -100..100).
+        this._brightness = 1 + (exposure / 100);
         this._contrast   = 1 + (contrast / 100);
         this._saturation = 1 + (saturation / 100);
-r       this._gl.deleteBuffer(theeetext();
+      },
+      draw(video) {
+        const gl = this._gl;
+        gl.viewport(0, 0, this._w, this._h);
+        gl.useProgram(this._prog);
+        gl.bindTexture(gl.TEXTURE_2D, this._tex);
+        // texImage2D from a video element uploads the current frame to the GPU.
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this._w, this._h, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        gl.uniform1f(this._uB, this._brightness || 1);
+        gl.uniform1f(this._uC, this._contrast || 1);
+        gl.uniform1f(this._uS, this._saturation || 1);
+        gl.bindVertexArray(this._vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.bindVertexArray(null);
+      },
+      readPixels() {
+        const gl = this._gl;
+        gl.readPixels(0, 0, this._w, this._h, gl.RGBA, gl.UNSIGNED_BYTE, this._readBuf);
+        flipRowsVertical(this._readBuf, this._w, this._h);
+        return this._readBuf.buffer;
+      },
+      dispose() {
+        try {
+          this._gl.deleteTexture(this._tex);
+          this._gl.deleteBuffer(this._vbo);
+          this._gl.deleteVertexArray(this._vao);
+          this._gl.deleteProgram(this._prog);
+          const ext = this._gl.getExtension('WEBGL_lose_context');
+          if (ext) ext.loseContext();
         } catch {}
-      },ebGL2 compositor init failed, falling back to 2D:', err);
-    
-}e we fall back to the 2D canvas path.
+      },
+    };
+  } catch (err) {
+    console.error('WebGL2 compositor init failed, falling back to 2D:', err);
+    try {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+    } catch {}
+    return null;
+  }
+}
+
+// ÔöÇÔöÇÔöÇ Virtual Camera Output (UnityCapture) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+let vcamNativeAvailable = false;
+let vcamRgbaTemp = null; // reusable RGBA buffer for conversion
+
+async function startVcamOutput() {
+  if (!currentStream) return;
+  // Use actual video element dimensions if available, fall back to track settings
+  const s = currentStream.getVideoTracks()[0].getSettings();
+  const w = cameraVideo.videoWidth  || s.width  || 1280;
+  const h = cameraVideo.videoHeight || s.height || 720;
+
+  vcamCanvas.width = w; vcamCanvas.height = h;
+
+  // Phase 2: prefer the WebGL2 GPU compositor for the raw path when enabled.
+  // Greenscreen still composites on the 2D canvas, so don't create the GL
+  // compositor when greenscreen is active ÔÇö startFrameLoop will acquire a 2D
+  // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
+  // in which case we fall back to the 2D canvas path.
   if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled) {
     glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
- 
+  } else {
+    glCompositor = null;
+  }
+  if (!glCompositor) {
+    vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
+  } else {
+    vcamCtx = null; // GL path owns the canvas; 2D context not needed
+  }
 
-ry Status('yellow', 'Driver registered but shared memory init failed — use OBS Window Capture');
+  if (vcamDriverReady) {
+    // Check if the native addon is available
+    try {
+      const avail = await window.electronAPI.vcamAvailable();
+      vcamNativeAvailable = !!avail.available;
+    } catch { vcamNativeAvailable = false; }
+
+    if (vcamNativeAvailable) {
+      // Initialize shared memory via the native addon in the main process
+      try {
+        const result = await window.electronAPI.vcamInit({ slot: vcamSlot, width: w, height: h });
+        if (result.ok) {
+          vcamNativeReady = true;
+          vcamBadge.classList.remove('hidden');
+          setVcamStatus('green', `Virtual Camera active ÔÇö ${slotLabel(vcamSlot)}`);
+        } else {
+          vcamNativeReady = false;
+          vcamBadge.classList.add('hidden');
+          setVcamStatus('yellow', 'Driver registered but shared memory init failed ÔÇö use OBS Window Capture');
         }
       } catch (err) {
         vcamNativeReady = false;
         vcamBadge.classList.add('hidden');
-        setVcamStatus('yellow', 'Virtual cam init error — use OBS Window Capture');
+        setVcamStatus('yellow', 'Virtual cam init error ÔÇö use OBS Window Capture');
       }
     } else {
-      vcamNa
+      vcamNativeReady = false;
+      vcamBadge.classList.add('hidden');
+      setVcamStatus('yellow', 'Native addon not built ÔÇö use OBS Window Capture');
+    }
     startFrameLoop(w, h);
   } else {
     // No driver installed yet: still run the preview loop so green screen works
     startFrameLoop(w, h);
   }
+}
 
-funccelFrame();roon the 2D canvas. If the GL compositor was active
+function startFrameLoop(w, h) {
+  cancelFrame();
+  if (greenscreenEnabled && segmentationReady) {
+    // Greenscreen composites on the 2D canvas. If the GL compositor was active
     // for the raw path, release it and acquire a 2D context for segmentation.
     if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
     if (!vcamCtx) vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
@@ -1001,7 +1344,10 @@ function startGlRawFrameLoop(w, h) {
   function draw() {
     if (!currentStream || !glCompositor) return;
     glCompositor.setAdjust(gsExposureValue, gsContrastValue, gsSaturationValue);
-    glComposaw);
+    glCompositor.draw(cameraVideo);
+    sendFrameToVcam(w, h);
+    perfFrameCount++;
+    scheduleFrame(draw);
   }
   scheduleFrame(draw);
 }
@@ -1015,27 +1361,30 @@ function setVideoFilters(ctx) {
 
 // Send RGBA frame data to the virtual camera via IPC
 // UnityCapture expects RGBA8 (format=0), top-down row order
-// The DirectShow filter converts RGBA→BGRA and handles bottom-up output internally
+// The DirectShow filter converts RGBAÔåÆBGRA and handles bottom-up output internally
 //
 // Backpressure: if the previous frame's IPC hasn't been consumed by the main
 // process yet, we DROP this frame rather than queuing another multi-MB readback
 // + clone. This keeps memory and latency bounded under load and lets the source
 // cadence (rVFC) naturally throttle us. The virtual camera keeps the most
 // recently written frame until the next one arrives, so dropping is the right
-// policy (drop-old would be wrong here — we want the freshest frame to win).
+// policy (drop-old would be wrong here ÔÇö we want the freshest frame to win).
 let vcamFrameInFlight = false;
 function sendFrameToVcam(width, height) {
   if (!vcamNativeReady) return;
   if (vcamFrameInFlight) return; // main process still writing the previous frame
   vcamFrameInFlight = true;
   const t0 = performance.now();
-  // Phase 2: read baccanvas.
+  // Phase 2: read back from the WebGL2 compositor's reusable buffer when active
+  // (single readPixels + in-place Y-flip), otherwise from the 2D canvas.
   let buf;
-  if (glCompositea
+  if (glCompositor) {
+    buf = glCompositor.readPixels();
   } else {
+    const img = vcamCtx.getImageData(0, 0, width, height);
     buf = img.data.buffer;
   }
-  // Exponential moving average of the GPU→CPU readback cost (dev perf HUD).
+  // Exponential moving average of the GPUÔåÆCPU readback cost (dev perf HUD).
   perfReadbackMs += (performance.now() - t0 - perfReadbackMs) * 0.1;
   window.electronAPI
     .vcamFrame({ slot: vcamSlot, data: buf })
@@ -1087,7 +1436,7 @@ function stopVcamOutput() {
   vcamBadge.classList.add('hidden');
 }
 
-// ─── Green Screen (AI background removal) ───────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Green Screen (AI background removal) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function initSegmentation() {
   if (selfieSegmentation) return;
   if (!window.SelfieSegmentation) {
@@ -1203,7 +1552,7 @@ function updateGreenscreenUI() {
 
 async function toggleGreenscreen() {
   if (!isPremium()) {
-    showPremiumUpgrade('Green Screen is a Premium feature — activate a license key to unlock');
+    showPremiumUpgrade('Green Screen is a Premium feature ÔÇö activate a license key to unlock');
     return;
   }
   greenscreenEnabled = !greenscreenEnabled;
@@ -1217,37 +1566,37 @@ async function toggleGreenscreen() {
   }
 }
 
-// ─── Virtual Camera Driver ────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Virtual Camera Driver ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 async function checkVirtualCameraDriver() {
   if (!window.electronAPI) { setVcamStatus('gray', 'Virtual Camera: unavailable'); return; }
-  setVcamStatus('yellow', 'Checking virtual camera driver…');
+  setVcamStatus('yellow', 'Checking virtual camera driverÔÇª');
   try {
     const installed = await window.electronAPI.checkVcam();
     if (installed) {
       vcamDriverReady = true;
-      setVcamStatus('yellow', 'Driver registered — start a camera to test the frame bridge');
+      setVcamStatus('yellow', 'Driver registered ÔÇö start a camera to test the frame bridge');
       btnInstallVcam.classList.add('hidden');
-      vcamInstallStatus.textContent = '✓ Driver registered. In OBS, look for "MultiCam" under Video Capture Devices.';
+      vcamInstallStatus.textContent = 'Ô£ô Driver registered. In OBS, look for "MultiCam" under Video Capture Devices.';
       vcamInstallStatus.style.color = 'var(--green)';
       if (currentStream) startVcamOutput();
     } else {
       // Auto-register the driver on launch (will prompt for admin/UAC)
-      setVcamStatus('yellow', 'Installing virtual camera driver (admin prompt)…');
-      vcamInstallStatus.textContent = 'Installing driver…';
+      setVcamStatus('yellow', 'Installing virtual camera driver (admin prompt)ÔÇª');
+      vcamInstallStatus.textContent = 'Installing driverÔÇª';
       vcamInstallStatus.style.color = 'var(--text-muted)';
       const r = await window.electronAPI.registerVcam();
       if (r.success) {
         vcamDriverReady = true;
         setVcamStatus('green', 'Virtual Camera driver registered');
         btnInstallVcam.classList.add('hidden');
-        vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
+        vcamInstallStatus.textContent = 'Ô£ô Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
         vcamInstallStatus.style.color = 'var(--green)';
         if (currentStream) startVcamOutput();
       } else {
         vcamDriverReady = false;
-        setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
+        setVcamStatus('gray', 'Virtual cam driver not installed ÔÇö Window Capture still works');
         btnInstallVcam.classList.remove('hidden');
-        vcamInstallStatus.textContent = '✗ ' + (r.error || 'Auto-install failed. Click below to retry.');
+        vcamInstallStatus.textContent = 'Ô£ù ' + (r.error || 'Auto-install failed. Click below to retry.');
         vcamInstallStatus.style.color = 'var(--text-muted)';
       }
     }
@@ -1263,26 +1612,26 @@ function setVcamStatus(color, text) {
 
 async function installVcamDriver() {
   if (!window.electronAPI) return;
-  setVcamStatus('yellow', 'Registering driver (admin prompt)…');
-  vcamInstallStatus.textContent = 'Registering…';
+  setVcamStatus('yellow', 'Registering driver (admin prompt)ÔÇª');
+  vcamInstallStatus.textContent = 'RegisteringÔÇª';
   vcamInstallStatus.style.color = 'var(--text-muted)';
   const r = await window.electronAPI.registerVcam();
   if (r.success) {
     vcamDriverReady = true;
     setVcamStatus('green', 'Virtual Camera driver registered');
     btnInstallVcam.classList.add('hidden');
-    vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
+    vcamInstallStatus.textContent = 'Ô£ô Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
     vcamInstallStatus.style.color = 'var(--green)';
     if (currentStream) startVcamOutput();
   } else {
     setVcamStatus('red', 'Registration failed');
-    vcamInstallStatus.textContent = '✗ ' + (r.error || 'Run as Administrator.');
+    vcamInstallStatus.textContent = 'Ô£ù ' + (r.error || 'Run as Administrator.');
     vcamInstallStatus.style.color = 'var(--accent)';
     btnInstallVcam.classList.remove('hidden');
   }
 }
 
-// ─── Event Listeners ──────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Event Listeners ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 deviceSelect.addEventListener('change', () => {
   saveSettingsDebounced({ lastDeviceIndex: deviceSelect.value });
   startSelected();
@@ -1305,7 +1654,7 @@ settingTheme.addEventListener('change', () => {
 
 btnNewWindow.addEventListener('click', () => {
   if (!isPremium()) {
-    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature — activate a license key to unlock');
+    showPremiumUpgrade('Opening a separate MultiCam window is a Premium feature ÔÇö activate a license key to unlock');
     return;
   }
   window.electronAPI?.openNewWindow();
@@ -1354,7 +1703,7 @@ btnSettings.addEventListener('click', () => settingsOverlay.classList.remove('hi
 btnCloseSettings.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); });
 
-// Exit App — deliberate quit so the user doesn't accidentally close via the window X.
+// Exit App ÔÇö deliberate quit so the user doesn't accidentally close via the window X.
 if (btnExitApp) {
   btnExitApp.addEventListener('click', () => {
     window.electronAPI?.quitApp?.();
@@ -1370,7 +1719,7 @@ if (helpToggle && helpContent) {
   });
 }
 
-// Changelog overlay — opened from the About section, closes on X / click-outside / Escape.
+// Changelog overlay ÔÇö opened from the About section, closes on X / click-outside / Escape.
 if (btnViewChangelog && changelogOverlay) {
   btnViewChangelog.addEventListener('click', () => changelogOverlay.classList.remove('hidden'));
 }
@@ -1381,9 +1730,9 @@ if (btnCloseChangelog && changelogOverlay) {
   });
 }
 
-// ─── Window controls (frameless mode) ─────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Window controls (frameless mode) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 // Minimize and maximize/restore buttons in the custom title bar.
-// No close button — quitting is done via "Exit App" in Settings.
+// No close button ÔÇö quitting is done via "Exit App" in Settings.
 function updateMaximizeIcon(isMaximized) {
   if (!maximizeIcon || !restoreIcon) return;
   maximizeIcon.classList.toggle('hidden', isMaximized);
@@ -1417,7 +1766,19 @@ btnInstallVcamSettings.addEventListener('click', installVcamDriver);
 btnActivateLicense.addEventListener('click', activateLicense);
 btnClearLicense.addEventListener('click', clearLicense);
 
-// ─── About / social links ────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Forum account event listeners ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+btnForumLogin.addEventListener('click', doForumLogin);
+btnForumLogout.addEventListener('click', doForumLogout);
+btnForumRegister.addEventListener('click', openForumRegister);
+linkForumReset.addEventListener('click', (e) => { e.preventDefault(); openForumReset(); });
+forumPasswordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doForumLogin();
+});
+forumEmailInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') forumPasswordInput.focus();
+});
+
+// ÔöÇÔöÇÔöÇ About / social links ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 if (window.electronAPI) {
   window.electronAPI.getAppVersion().then(v => {
     if (v && appVersionDisplay) appVersionDisplay.textContent = `v${v}`;
@@ -1533,5 +1894,5 @@ window.addEventListener('beforeunload', () => {
   if (activeScrcpyTitle && window.electronAPI) window.electronAPI.stopScrcpy(activeScrcpyTitle);
 });
 
-// ─── Go ───────────────────────────────────────────────────────────────────────
+// ÔöÇÔöÇÔöÇ Go ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 init();

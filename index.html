@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -41,21 +41,21 @@
       </div>
     </div>
 
-    <!-- Camera controls bar — sits below the header/title bar -->
+    <!-- Camera controls bar ÔÇö sits below the header/title bar -->
     <div id="controls-bar">
       <div id="controls-left">
         <div id="resolution-wrap">
           <label for="res-select">Resolution</label>
           <select id="res-select">
-            <option value="1920x1080">1920×1080</option>
-            <option value="1280x720" selected>1280×720</option>
-            <option value="854x480">854×480</option>
-            <option value="640x360">640×360</option>
-            <option value="1080x1920">1080×1920</option>
-            <option value="720x1280">720×1280</option>
-            <option value="1080x1080">1080×1080</option>
-            <option value="720x720">720×720</option>
-            <option value="640x480">640×480</option>
+            <option value="1920x1080">1920├ù1080</option>
+            <option value="1280x720" selected>1280├ù720</option>
+            <option value="854x480">854├ù480</option>
+            <option value="640x360">640├ù360</option>
+            <option value="1080x1920">1080├ù1920</option>
+            <option value="720x1280">720├ù1280</option>
+            <option value="1080x1080">1080├ù1080</option>
+            <option value="720x720">720├ù720</option>
+            <option value="640x480">640├ù480</option>
           </select>
         </div>
         <div class="split-button" id="new-camera-split">
@@ -63,7 +63,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             New Camera
           </button>
-          <button id="btn-new-window-menu" title="Camera window options">▼</button>
+          <button id="btn-new-window-menu" title="Camera window options">Ôû╝</button>
           <div class="split-dropdown hidden" id="new-camera-dropdown">
             <button id="btn-new-same-window" title="Add a second camera inside this window">Add in this window</button>
             <button id="btn-new-separate" title="Open a separate MultiCam window">Open new MultiCam</button>
@@ -124,7 +124,7 @@
         <div id="camera-pane-0" class="camera-pane main-pane" data-pane="0">
           <div class="camera-pane-header">
             <select id="device-select" class="camera-pane-select">
-              <option value="">— Camera —</option>
+              <option value="">ÔÇö Camera ÔÇö</option>
             </select>
             <button id="btn-close-pane-0" class="btn-close-pane" title="Close main camera">&#10005;</button>
           </div>
@@ -138,7 +138,7 @@
               <img id="no-cam-logo" src="assets/MCV-SplashScreen.png?v=3" alt="MultiCam Viewer">
               <p id="no-cam-heading">Plug in your phone (USB debugging on), then pick it above</p>
 
-              <!-- Connection guide — shown when 0 cameras found -->
+              <!-- Connection guide ÔÇö shown when 0 cameras found -->
               <div id="connection-guide" class="hidden">
                 <div class="guide-tabs">
                   <button class="guide-tab active" data-tab="usb">USB Debugging (Recommended)</button>
@@ -147,28 +147,28 @@
 
                 <!-- Primary: USB debugging + scrcpy (built in) -->
                 <div class="guide-panel active" id="tab-usb">
-                  <p class="guide-title">Direct USB camera — no app on your phone</p>
+                  <p class="guide-title">Direct USB camera ÔÇö no app on your phone</p>
                   <ol class="guide-steps">
                     <li>Connect your phone with a <strong>data USB cable</strong></li>
-                    <li>Enable Developer Options: <strong>Settings → About phone → tap "Build number" 7 times</strong></li>
-                    <li>Enable <strong>Settings → System → Developer Options → USB Debugging</strong></li>
-                    <li>On the phone popup <em>"Allow USB debugging?"</em> → tap <strong>Allow</strong> (tick "always allow")</li>
-                    <li>Click <strong>&#8635; Refresh</strong> above — your phone appears as <em>"📱 [model] — back camera"</em></li>
-                    <li>Select it. The first time, watch your phone for a camera permission prompt → <strong>Allow</strong></li>
+                    <li>Enable Developer Options: <strong>Settings ÔåÆ About phone ÔåÆ tap "Build number" 7 times</strong></li>
+                    <li>Enable <strong>Settings ÔåÆ System ÔåÆ Developer Options ÔåÆ USB Debugging</strong></li>
+                    <li>On the phone popup <em>"Allow USB debugging?"</em> ÔåÆ tap <strong>Allow</strong> (tick "always allow")</li>
+                    <li>Click <strong>&#8635; Refresh</strong> above ÔÇö your phone appears as <em>"­ƒô▒ [model] ÔÇö back camera"</em></li>
+                    <li>Select it. The first time, watch your phone for a camera permission prompt ÔåÆ <strong>Allow</strong></li>
                   </ol>
-                  <p class="guide-note">This uses scrcpy (bundled). A temporary helper is pushed to the phone over USB and removed on disconnect — nothing is permanently installed.</p>
+                  <p class="guide-note">This uses scrcpy (bundled). A temporary helper is pushed to the phone over USB and removed on disconnect ÔÇö nothing is permanently installed.</p>
                 </div>
 
                 <!-- Android 14+ native UVC -->
                 <div class="guide-panel hidden" id="tab-android14">
-                  <p class="guide-title">Built-in USB Webcam mode (Android 14–16)</p>
+                  <p class="guide-title">Built-in USB Webcam mode (Android 14ÔÇô16)</p>
                   <ol class="guide-steps">
                     <li>Plug phone into PC with a <strong>data USB cable</strong></li>
-                    <li>On phone: pull down the notification shade → tap the <strong>USB</strong> notification</li>
+                    <li>On phone: pull down the notification shade ÔåÆ tap the <strong>USB</strong> notification</li>
                     <li>Choose <strong>"USB Webcam"</strong> (under "Use USB for")</li>
-                    <li>Click <strong>&#8635; Refresh</strong> — phone appears as <em>"🎥 ... Webcam"</em></li>
+                    <li>Click <strong>&#8635; Refresh</strong> ÔÇö phone appears as <em>"­ƒÄÑ ... Webcam"</em></li>
                   </ol>
-                  <p class="guide-note">&#9888; If "USB Webcam" isn't listed, your device doesn't expose it — use the USB Debugging tab instead (works on all Android 12+).</p>
+                  <p class="guide-note">&#9888; If "USB Webcam" isn't listed, your device doesn't expose it ÔÇö use the USB Debugging tab instead (works on all Android 12+).</p>
                 </div>
               </div>
             </div>
@@ -181,7 +181,7 @@
         <div class="camera-pane secondary-pane" data-pane="">
           <div class="camera-pane-header">
             <select class="camera-pane-select">
-              <option value="">— Camera —</option>
+              <option value="">ÔÇö Camera ÔÇö</option>
             </select>
             <button class="btn-close-pane" title="Close this camera">&#10005;</button>
           </div>
@@ -232,7 +232,7 @@
         </section>
 
         <section>
-          <h3>Forum Account <span class="help-tip" data-help="Sign in with your pnksounds.dev forum account. The forum is the identity provider — register on the forum website first.">?</span></h3>
+          <h3>Forum Account <span class="help-tip" data-help="Sign in with your pnksounds.dev forum account. The forum is the identity provider ÔÇö register on the forum website first.">?</span></h3>
 
           <!-- Logged-out: login form -->
           <div id="forum-login-form">
@@ -260,6 +260,7 @@
                 <span id="forum-username" class="forum-username"></span>
                 <span id="forum-email" class="forum-email"></span>
                 <span id="forum-role-badge" class="forum-role-badge hidden"></span>
+                <span id="forum-premium-badge" class="forum-premium-badge hidden">Premium</span>
               </div>
             </div>
             <div class="settings-button-row">
@@ -321,15 +322,15 @@
 
         <section>
           <h3>Camera Slots</h3>
-          <p>This window's slot: <strong id="current-slot-display">—</strong></p>
-          <p class="note">OBS Window Capture is recommended over the driver — no install needed.</p>
+          <p>This window's slot: <strong id="current-slot-display">ÔÇö</strong></p>
+          <p class="note">OBS Window Capture is recommended over the driver ÔÇö no install needed.</p>
         </section>
 
         <section>
           <h3>About</h3>
           <div class="about-version-wrap">
             <span class="about-label">Version</span>
-            <span id="app-version-display" class="about-version">—</span>
+            <span id="app-version-display" class="about-version">ÔÇö</span>
             <button id="btn-view-changelog" class="changelog-link-btn" title="View changelog">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
               Changelog
@@ -351,7 +352,7 @@
           </div>
         </section>
 
-        <!-- Collapsible help & guides — collapsed by default to keep the panel clean -->
+        <!-- Collapsible help & guides ÔÇö collapsed by default to keep the panel clean -->
         <section class="help-section">
           <button class="help-toggle" id="help-toggle" aria-expanded="false">
             <span>Help &amp; Guides</span>
@@ -366,17 +367,17 @@
               <h4>OBS Setup <span class="help-tip" data-help="Window Capture needs no driver. The Virtual Camera driver is an alternative if Window Capture isn't available.">?</span></h4>
               <ol>
                 <li>Select your <strong>phone camera</strong> in the dropdown above</li>
-                <li>In OBS: Add Source → <strong>Window Capture</strong> → select <em>"MultiCam Viewer"</em> (recommended, no driver needed)</li>
-                <li>Or register the driver above, then OBS → Add Source → <strong>Video Capture Device</strong> → device <strong>"MultiCam"</strong></li>
-                <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"MultiCam 2"</strong></li>
+                <li>In OBS: Add Source ÔåÆ <strong>Window Capture</strong> ÔåÆ select <em>"MultiCam Viewer"</em> (recommended, no driver needed)</li>
+                <li>Or register the driver above, then OBS ÔåÆ Add Source ÔåÆ <strong>Video Capture Device</strong> ÔåÆ device <strong>"MultiCam"</strong></li>
+                <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source ÔåÆ <strong>"MultiCam 2"</strong></li>
               </ol>
             </div>
             <div class="help-block">
               <h4>Camera Slots</h4>
               <ul>
-                <li>Window 1 → <strong>MultiCam</strong></li>
-                <li>Window 2 → <strong>MultiCam 2</strong></li>
-                <li>Window 3 → <strong>MultiCam 3</strong></li>
+                <li>Window 1 ÔåÆ <strong>MultiCam</strong></li>
+                <li>Window 2 ÔåÆ <strong>MultiCam 2</strong></li>
+                <li>Window 3 ÔåÆ <strong>MultiCam 3</strong></li>
               </ul>
             </div>
           </div>
@@ -397,13 +398,13 @@
           <h3 class="changelog-version">v1.0.0</h3>
           <span class="changelog-date">Initial release</span>
           <ul>
-            <li>View up to <strong>2 phone cameras</strong> simultaneously over USB — no app installed on the phone</li>
+            <li>View up to <strong>2 phone cameras</strong> simultaneously over USB ÔÇö no app installed on the phone</li>
             <li><strong>Multi-camera grid</strong> layout with per-pane camera selection and close controls</li>
             <li><strong>Output window</strong> for clean OBS Window Capture (no driver install needed)</li>
             <li><strong>Virtual camera driver</strong> registration for OBS Video Capture Device</li>
             <li><strong>AI green screen</strong> with custom background color or image <span class="pro-tag">PRO</span></li>
             <li><strong>Video adjustments</strong>: exposure, contrast, saturation, edge threshold &amp; gap <span class="pro-tag">PRO</span></li>
-            <li><strong>Premium licensing</strong> — unlock up to 4 cameras and pro features with a license key</li>
+            <li><strong>Premium licensing</strong> ÔÇö unlock up to 4 cameras and pro features with a license key</li>
             <li><strong>Theme selector</strong>: Dusk, Dark, and Light</li>
             <li>Resolution presets for landscape, portrait, and square formats</li>
             <li>Splash screen on startup and persistent settings between launches</li>

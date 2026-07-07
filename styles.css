@@ -1,4 +1,4 @@
-* {
+﻿* {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -124,7 +124,7 @@ html, body {
 
 /* ---- CAMERA CONTROLS BAR ---- */
 /* Grid-like layout: primary capture controls on the left, secondary actions
-   on the right. No wasted space — uses space-between to fill the bar. */
+   on the right. No wasted space ÔÇö uses space-between to fill the bar. */
 #controls-bar {
   display: flex;
   align-items: center;
@@ -201,7 +201,7 @@ button:active {
 }
 
 /* Icon-text control buttons (Output, Green Screen) and icon-only buttons
-   (Refresh, Settings) — compact, aligned, grid-friendly. */
+   (Refresh, Settings) ÔÇö compact, aligned, grid-friendly. */
 .ctrl-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -227,10 +227,10 @@ button:active {
   padding: 5px;
 }
 
-/* ─── Window controls (frameless mode) ─────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Window controls (frameless mode) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 /* Minimal minimize / maximize buttons pinned to the absolute top-right of the
    topbar. Positioned absolutely so they stay in the corner even when the
-   controls row wraps to a second line. No close button — quitting is done via
+   controls row wraps to a second line. No close button ÔÇö quitting is done via
    the "Exit App" button in Settings to prevent accidental closure. */
 #window-controls {
   position: absolute;
@@ -878,7 +878,7 @@ body.clean-mode #vcam-canvas {
   display: none;
 }
 
-/* ─── Premium / PRO badges ─────────────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Premium / PRO badges ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .pro-tag {
   display: inline-block;
   font-size: 9px;
@@ -937,7 +937,7 @@ body.clean-mode #vcam-canvas {
   margin: 4px 0 2px;
 }
 
-/* ─── About section & social links ─────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ About section & social links ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .about-version-wrap {
   display: flex;
   align-items: center;
@@ -1097,9 +1097,9 @@ body.clean-mode #vcam-canvas {
   display: none !important;
 }
 
-/* ─── Help-tip "?" hover tooltips ──────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Help-tip "?" hover tooltips ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 /* Reusable inline "?" icon that reveals a tooltip on hover/focus.
-   Used in Settings to keep the panel concise — detail lives behind the
+   Used in Settings to keep the panel concise ÔÇö detail lives behind the
    question mark instead of always being visible as a paragraph. */
 .help-tip {
   display: inline-flex;
@@ -1130,7 +1130,7 @@ body.clean-mode #vcam-canvas {
   outline: none;
 }
 
-/* The tooltip body — populated from data-help via CSS attr() */
+/* The tooltip body ÔÇö populated from data-help via CSS attr() */
 .help-tip::after {
   content: attr(data-help);
   position: absolute;
@@ -1180,14 +1180,14 @@ body.clean-mode #vcam-canvas {
   opacity: 1;
 }
 
-/* ─── Settings button row (paired buttons) ─────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Settings button row (paired buttons) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .settings-button-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-/* ─── Exit App button ──────────────────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Exit App button ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .exit-app-btn {
   display: flex;
   align-items: center;
@@ -1214,7 +1214,7 @@ body.clean-mode #vcam-canvas {
   opacity: 0.85;
 }
 
-/* ─── Forum account ─────────────────────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Forum account ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .forum-status {
   font-size: 12px;
   margin: 6px 0 0 0;
@@ -1284,6 +1284,20 @@ body.clean-mode #vcam-canvas {
   border-radius: 10px;
 }
 
+.forum-premium-badge {
+  display: inline-block;
+  width: fit-content;
+  margin-top: 3px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: var(--green);
+  border-radius: 10px;
+}
+
 .link-btn {
   background: transparent;
   color: var(--text-muted);
@@ -1300,7 +1314,7 @@ body.clean-mode #vcam-canvas {
   border-color: var(--accent);
 }
 
-/* ─── Collapsible Help & Guides section ────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Collapsible Help & Guides section ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .help-section {
   /* spans full width in the settings grid */
   grid-column: 1 / -1;
@@ -1374,7 +1388,7 @@ body.clean-mode #vcam-canvas {
   color: var(--text);
 }
 
-/* ─── Changelog button in About section ────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Changelog button in About section ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 .changelog-link-btn {
   display: inline-flex;
   align-items: center;
@@ -1397,7 +1411,7 @@ body.clean-mode #vcam-canvas {
   color: var(--green);
 }
 
-/* ─── Changelog overlay ────────────────────────────────────────────────────── */
+/* ÔöÇÔöÇÔöÇ Changelog overlay ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ */
 #changelog-overlay {
   position: fixed;
   inset: 0;
