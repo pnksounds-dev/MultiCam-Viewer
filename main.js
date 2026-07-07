@@ -455,6 +455,8 @@ function registerVcam() {
 function createWindow(show = true) {
   logToFile('createWindow called with show=' + show);
   const slotIndex = windows.size % 4;
+  const windowNumber = slotIndex + 1;
+  const windowTitle = `MultiCam${windowNumber}`;
 
   const iconPath = path.join(__dirname, 'assets', 'app icon.png');
   const hasIcon = fs.existsSync(iconPath);
@@ -465,7 +467,7 @@ function createWindow(show = true) {
     minWidth: 700,
     minHeight: 480,
     center: true,
-    title: 'MultiCam Viewer',
+    title: windowTitle,
     backgroundColor: '#0f0f1a',
     frame: false,
     show,
@@ -511,7 +513,7 @@ function createWindow(show = true) {
   // Explicitly set the window title after creation. With frame:false, Windows
   // may not reliably use the title from the BrowserWindow options, causing OBS
   // window capture to see the wrong name.
-  win.setTitle('MultiCam Viewer');
+  win.setTitle(windowTitle);
 
   // Block DevTools in production builds to hinder tampering.
   if (app.isPackaged) {
@@ -565,6 +567,7 @@ function createWindow(show = true) {
     win.webContents.send('vcam-slot', slotIndex);
     win.webContents.send('vcam-dll-path', getVcamDllPath());
     win.webContents.send('window-index', slotIndex);
+    win.webContents.send('window-title', windowTitle);
 
     // Close the splash screen once the main window is ready to show.
     if (splashWindow && !splashWindow.isDestroyed()) {

@@ -292,6 +292,9 @@ async function init() {
     window.electronAPI.onWindowIndex((idx) => {
       windowIndex = idx;
     });
+    window.electronAPI.onWindowTitle((title) => {
+      document.title = title;
+    });
     window.electronAPI.onScrcpyExited((data) => {
       if (data.windowTitle === activeScrcpyTitle) {
         statusText.textContent = 'Phone capture stopped' +
