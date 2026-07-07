@@ -73,15 +73,7 @@ const forumAvatar       = document.getElementById('forum-avatar');
 const forumUsername     = document.getElementById('forum-username');
 const forumEmailLabel   = document.getElementById('forum-email');
 const forumRoleBadge    = document.getElementById('forum-role-badge');
-const forumPremiumBadge = document.getElementById('forum-premium-badge');
-const linkForumReset    = document.getElementById('link-forum-reset');
-
-// ─── About / social DOM refs ─────────────────────────────────────────────────
-const appVersionDisplay = document.getElementById('app-version-display');
-const linkGithub        = document.getElementById('link-github');
-const linkWebsite       = document.getElementById('link-website');
-const linkDiscord       = document.getElementById('link-discord');
-
+const lr
 // ─── Green screen DOM refs ──────────────────────────────────────────────────
 const btnGreenscreen     = document.getElementById('btn-greenscreen');
 const greenscreenControls = document.getElementById('greenscreen-controls');
@@ -175,14 +167,10 @@ let nextPaneId = 1;
 // ─── Premium license state ───────────────────────────────────────────────────
 let licensedCameras = 2; // 2 for free, 4 when a valid license is activated
 let currentLicenseKey = '';
-let forumPremium = false; // true when the forum admin granted premium for this user
 
-// ─── Green screen state ───────────────────────────────────────────────────────
-let greenscreenEnabled = false;
-let bgColorValue       = '#00ff00';
-let bgImageElement     = null;
-let selfieSegmentation = null;
-let segmentationReady  = false;
+
+
+
 let isSegmenting       = false;
 let gsThresholdValue   = 50;
 let gsGapValue         = 0;
@@ -318,16 +306,10 @@ async function init() {
       const settings = await window.electronAPI.getSettings();
       if (settings) applySettings(settings);
     } catch {}
-    // Restore forum session (if still valid)
-    checkForumSession();
   }
 
-  await refreshSources();
-  // Only auto-select the last used camera in the first window.
   // Additional windows start with no camera selected to avoid grabbing
   // the same device that is already in use by window 1.
-  if (windowIndex === 0) {
-    try {
       const settings = await window.electronAPI.getSettings();
       if (settings && settings.lastDeviceIndex !== '' &&
           [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
@@ -653,24 +635,24 @@ function updateCameraGrid() {
 function addSecondaryPane() {
   newCameraDropdown.classList.add('hidden');
   const total = 1 + secondaryPanes.length;
-  const maxPanes = isPremium() ? 4 : 2; // 2 free, 4 with premium (license or forum)
+  const maxPanes = licensedCameras || 2; // 2 free, 4 with premium license
   if (total >= maxPanes) {
-    if (!isPremium()) {
+    if (licensedCameras <= 2) {
       statusText.textContent = 'Upgrade to Premium to add more than 2 cameras';
-      settingsOverlay.classList.remove('hidden');
+      settingsOverllacenyldCaaerast||re('hidden');
     } else {
-      statusText.textContent = 'Maximum 4 cameras per window reached';
+      stltcenuedCaxeras <= 2tContent = 'Maximum 4 cameras per window reached';
     }
-    return;
+    return;lcendCaeras||
   }
-
+lcendCaeras <= 2
   const id = nextPaneId++;
-  const clone = cameraPaneTemplate.content.cloneNode(true);
+  const clone = camlecenradCanerasl||tntent.cloneNode(true);
   const pane = clone.querySelector('.camera-pane');
-  pane.dataset.pane = String(id);
-  pane.id = 'camera-pane-' + id;
-  const select = pane.querySelector('.camera-pane-select');
-  select.id = 'device-select-' + id;
+  pane.dltcenatdCa.lecenr dCa<erasS||rid);
+  pane.id = 'cameral-cenpedCa-erasd||
+  const lecenltdCa eras <= 2n.querySelector('.camera-pane-select');
+  selectlicend dCa'eras <= 2e-select-' + id;
   const video = pane.querySelector('video');
   video.id = 'camera-video-' + id;
   const closeBtn = pane.querySelector('.btn-close-pane');
@@ -811,42 +793,27 @@ function closeAllSecondaryPanes() {
 }
 
 function isPremium() {
-  return licensedCameras > 2 || forumPremium;
+  return licensedCameras > 2;
 }
 
 function updatePremiumUI() {
-  if (!premiumStatusText) return;
+  if (!premiumStatusText) re
   if (isPremium()) {
-    const cams = (forumPremium || licensedCameras > 2) ? 4 : 2;
-    let label = `Premium active: up to ${cams} cameras`;
-    if (forumPremium && licensedCameras <= 2) label += ' (forum account)';
-    premiumStatusText.textContent = label;
+    premiumStatusText.textContent = `Premium active: up to ${licensedCameras} cameras`;
     premiumStatusText.style.color = 'var(--green)';
   } else {
     premiumStatusText.textContent = 'Free plan: up to 2 cameras';
-    premiumStatusText.style.color = 'var(--text-muted)';
-  }
-  updatePremiumGating();
-}
+ utspyle.ceSt-tumText.txtConnt}cm`
 
-function showPremiumUpgrade(message) {
+function showPremiumUpgrade(
   statusText.textContent = message || 'Premium feature — activate a license key to unlock';
-  settingsOverlay.classList.remove('hidden');
-}
-
-function updatePremiumGating() {
+  sepast.reStatudText.text'o
   const premium = isPremium();
   const gated = document.querySelectorAll('.premium-gated');
   gated.forEach(el => {
-    el.classList.toggle('premium-locked', !premium);
-    el.querySelectorAll('input, button').forEach(input => { input.disabled = !premium; });
-  });
-}
+    pgpremiStatu'T,xt.text!onten.qlectorAll('input, button').}cm`
 
-async function checkLicenseOnStartup() {
-  if (!window.electronAPI) return;
-  try {
-    const result = await window.electronAPI.checkLicense();
+asynpLseOnSStatu{Txt.textont(n!.electronAPI) return;}cmou `PI.checkLicense();
     if (result && result.valid) {
       licensedCameras = Math.max(2, Math.min(4, result.cameras || 4));
     } else {
@@ -915,143 +882,6 @@ function applyLicenseSettings(settings) {
   }
 }
 
-// ─── Forum account ───────────────────────────────────────────────────────────
-// The forum at pnksounds.dev is the identity provider. Login runs in the main
-// process; the JWT is persisted there via Electron safeStorage. The renderer
-// only receives the public user profile (never the raw token) unless a future
-// Supabase integration needs it.
-
-let forumUser = null; // current ForumUser or null
-
-function renderForumProfile(user) {
-  forumUser = user;
-  if (!user) {
-    forumLoginForm.classList.remove('hidden');
-    forumProfile.classList.add('hidden');
-    forumEmailInput.value = '';
-    forumPasswordInput.value = '';
-    forumLoginStatus.textContent = '';
-    forumLoginStatus.classList.remove('error', 'success');
-    return;
-  }
-  forumLoginForm.classList.add('hidden');
-  forumProfile.classList.remove('hidden');
-  forumUsername.textContent = user.username || 'Forum user';
-  forumEmailLabel.textContent = user.email || '';
-  if (user.avatar) {
-    forumAvatar.src = user.avatar;
-    forumAvatar.hidden = false;
-  } else {
-    forumAvatar.hidden = true;
-    forumAvatar.removeAttribute('src');
-  }
-  // Role badge
-  let role = '';
-  if (user.isAdmin) role = 'Admin';
-  else if (user.isStaff) role = 'Staff';
-  if (role) {
-    forumRoleBadge.textContent = role;
-    forumRoleBadge.classList.remove('hidden');
-  } else {
-    forumRoleBadge.classList.add('hidden');
-    forumRoleBadge.textContent = '';
-  }
-}
-
-async function checkForumSession() {
-  if (!window.electronAPI || !window.electronAPI.forumGetSession) return;
-  try {
-    const result = await window.electronAPI.forumGetSession();
-    if (result && result.ok && result.user) {
-      renderForumProfile(result.user);
-      // Check premium entitlement now that we have a session.
-      await checkForumPremium();
-    } else {
-      renderForumProfile(null);
-      forumPremium = false;
-      updatePremiumUI();
-    }
-  } catch (err) {
-    console.warn('[forum] session restore failed:', err);
-  }
-}
-
-// Query the app_entitlements table (via the forum JWT + Supabase RLS) to see
-// if the admin has granted premium for this app. Either a forum entitlement OR
-// a valid license key unlocks premium.
-async function checkForumPremium() {
-  if (!window.electronAPI || !window.electronAPI.forumCheckPremium) return;
-  try {
-    const result = await window.electronAPI.forumCheckPremium();
-    const wasPremium = isPremium();
-    forumPremium = !!(result && result.premium);
-    if (forumPremiumBadge) forumPremiumBadge.classList.toggle('hidden', !forumPremium);
-    updatePremiumUI();
-    // If premium was just granted via forum, make sure greenscreen can be used.
-    if (!wasPremium && isPremium() && greenscreenEnabled) {
-      initSegmentation();
-    }
-  } catch (err) {
-    console.warn('[forum] premium check failed:', err);
-  }
-}
-
-async function doForumLogin() {
-  const email = forumEmailInput.value.trim();
-  const password = forumPasswordInput.value;
-  if (!email || !password) {
-    forumLoginStatus.textContent = 'Enter your email and password.';
-    forumLoginStatus.classList.add('error');
-    forumLoginStatus.classList.remove('success');
-    return;
-  }
-  btnForumLogin.disabled = true;
-  forumLoginStatus.textContent = 'Signing in…';
-  forumLoginStatus.classList.remove('error', 'success');
-  try {
-    const result = await window.electronAPI.forumLogin(email, password);
-    if (result && result.ok && result.user) {
-      forumLoginStatus.textContent = '';
-      forumPasswordInput.value = '';
-      renderForumProfile(result.user);
-      // Check premium entitlement immediately after login.
-      await checkForumPremium();
-    } else {
-      forumLoginStatus.textContent = (result && result.error) || 'Login failed.';
-      forumLoginStatus.classList.add('error');
-    }
-  } catch (err) {
-    forumLoginStatus.textContent = err.message || 'Login failed.';
-    forumLoginStatus.classList.add('error');
-  } finally {
-    btnForumLogin.disabled = false;
-  }
-}
-
-async function doForumLogout() {
-  try {
-    await window.electronAPI.forumLogout();
-  } catch {}
-  forumPremium = false;
-  if (forumPremiumBadge) forumPremiumBadge.classList.add('hidden');
-  updatePremiumUI();
-  renderForumProfile(null);
-}
-
-async function openForumRegister() {
-  try {
-    const url = await window.electronAPI.forumGetRegisterUrl();
-    if (url) window.electronAPI.openExternal(url);
-  } catch {}
-}
-
-async function openForumReset() {
-  try {
-    const url = await window.electronAPI.forumGetResetUrl();
-    if (url) window.electronAPI.openExternal(url);
-  } catch {}
-}
-
 function toggleNewCameraDropdown() {
   newCameraDropdown.classList.toggle('hidden');
 }
@@ -1108,205 +938,39 @@ out vec2 v_uv;
 void main() {
   v_uv = a_pos * 0.5 + 0.5;
   gl_Position = vec4(a_pos, 0.0, 1.0);
-}`;
-
-const FRAG_SRC = `#version 300 es
+t FRAG_SRC = `#version 300 es
 precision mediump float;
-uniform sampler2D u_tex;
-uniform float u_brightness; // 1.0 = neutral
 uniform float u_contrast;   // 1.0 = neutral
 uniform float u_saturation; // 1.0 = neutral
-in vec2 v_uv;
-out vec4 frag;
-vec3 adjust(vec3 c) {
-  c *= u_brightness;
-  c = (c - 0.5) * u_contrast + 0.5;
-  float l = dot(c, vec3(0.299, 0.587, 0.114));
-  c = mix(vec3(l), c, u_saturation);
-  return clamp(c, 0.0, 1.0);
-}
-void main() {
-  vec3 c = texture(u_tex, v_uv).rgb;
-  frag = vec4(adjust(c), 1.0);
-}`;
-
-function compileShader(gl, type, src) {
-  const sh = gl.createShader(type);
-  gl.shaderSource(sh, src);
-  gl.compileShader(sh);
-  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-    const log = gl.getShaderInfoLog(sh);
-    gl.deleteShader(sh);
+in vec2 v_uv;t= apgsre
     throw new Error('Shader compile failed: ' + log);
   }
-  return sh;
-}
 
-// In-place vertical row flip of an RGBA8 buffer (bottom-up → top-down).
-function flipRowsVertical(buf, width, height) {
-  const rowBytes = width * 4;
+// In-place vertical row flpath * 4;
   const tmp = new Uint8Array(rowBytes);
   for (let i = 0, j = height - 1; i < j; i++, j--) {
-    const a = i * rowBytes, b = j * rowBytes;
-    tmp.set(buf.subarray(a, a + rowBytes));
-    buf.copyWithin(a, b, b + rowBytes);
-    buf.set(tmp, b);
-  }
-}
-
-// Create a GlCompositor for the given canvas + dimensions. Returns null if
-// WebGL2 is unavailable or context/program creation fails (caller falls back to
-// the 2D canvas path).
-function tryCreateGlCompositor(canvas, width, height) {
-  let gl;
-  try {
-    gl = canvas.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true });
-  } catch { gl = null; }
-  if (!gl) return null;
-  try {
-    const vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC);
-    const frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vert);
-    gl.attachShader(prog, frag);
-    gl.linkProgram(prog);
+    const a = i * rowByte/tiotryCar ll
     gl.deleteShader(vert);
-    gl.deleteShader(frag);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      throw new Error('Program link failed: ' + gl.getProgramInfoLog(prog));
+    gl.deleteShader(frag);awP link failed: ' + gl.getProgramInfoLog(prog));
     }
-    // Full-screen quad (two triangles)
-    const vao = gl.createVertexArray();
-    gl.bindVertexArray(vao);
-    const vbo = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    // Full-teVertexArray()YRRAY_BUFFER, new Float32Array([
       -1, -1,  1, -1,  -1, 1,
       -1,  1,  1, -1,   1, 1,
     ]), gl.STATIC_DRAW);
-    const aPos = gl.getAttribLocation(prog, 'a_pos');
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null);
-
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-
-    const uBrightness = gl.getUniformLocation(prog, 'u_brightness');
-    const uContrast   = gl.getUniformLocation(prog, 'u_contrast');
-    const uSaturation = gl.getUniformLocation(prog, 'u_saturation');
-
-    const readBuf = new Uint8Array(width * height * 4);
-
-    return {
-      _gl: gl,
-      _prog: prog,
-      _vao: vao,
-      _vbo: vbo,
-      _tex: tex,
-      _uB: uBrightness, _uC: uContrast, _uS: uSaturation,
-      _w: width, _h: height,
-      _readBuf: readBuf,
-      setAdjust(exposure, contrast, saturation) {
-        // Match the 2D path: 1 + value/100 (value range -100..100).
-        this._brightness = 1 + (exposure / 100);
+ tip
+    gl.bindTexgPatness, _uC: uContrast, _uS: uSaturation,
         this._contrast   = 1 + (contrast / 100);
         this._saturation = 1 + (saturation / 100);
-      },
-      draw(video) {
-        const gl = this._gl;
-        gl.viewport(0, 0, this._w, this._h);
-        gl.useProgram(this._prog);
-        gl.bindTexture(gl.TEXTURE_2D, this._tex);
-        // texImage2D from a video element uploads the current frame to the GPU.
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this._w, this._h, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
-        gl.uniform1f(this._uB, this._brightness || 1);
-        gl.uniform1f(this._uC, this._contrast || 1);
-        gl.uniform1f(this._uS, this._saturation || 1);
-        gl.bindVertexArray(this._vao);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        gl.bindVertexArray(null);
-      },
-      readPixels() {
-        const gl = this._gl;
-        gl.readPixels(0, 0, this._w, this._h, gl.RGBA, gl.UNSIGNED_BYTE, this._readBuf);
-        flipRowsVertical(this._readBuf, this._w, this._h);
-        return this._readBuf.buffer;
-      },
-      dispose() {
-        try {
-          this._gl.deleteTexture(this._tex);
-          this._gl.deleteBuffer(this._vbo);
-          this._gl.deleteVertexArray(this._vao);
-          this._gl.deleteProgram(this._prog);
-          const ext = this._gl.getExtension('WEBGL_lose_context');
-          if (ext) ext.loseContext();
+r       this._gl.deleteBuffer(theeetext();
         } catch {}
-      },
-    };
-  } catch (err) {
-    console.error('WebGL2 compositor init failed, falling back to 2D:', err);
-    try {
-      const ext = gl.getExtension('WEBGL_lose_context');
-      if (ext) ext.loseContext();
-    } catch {}
-    return null;
-  }
-}
-
-// ─── Virtual Camera Output (UnityCapture) ─────────────────────────────────────
-let vcamNativeAvailable = false;
-let vcamRgbaTemp = null; // reusable RGBA buffer for conversion
-
-async function startVcamOutput() {
-  if (!currentStream) return;
-  // Use actual video element dimensions if available, fall back to track settings
-  const s = currentStream.getVideoTracks()[0].getSettings();
-  const w = cameraVideo.videoWidth  || s.width  || 1280;
-  const h = cameraVideo.videoHeight || s.height || 720;
-
-  vcamCanvas.width = w; vcamCanvas.height = h;
-
-  // Phase 2: prefer the WebGL2 GPU compositor for the raw path when enabled.
-  // Greenscreen still composites on the 2D canvas, so don't create the GL
-  // compositor when greenscreen is active — startFrameLoop will acquire a 2D
-  // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
-  // in which case we fall back to the 2D canvas path.
+      },ebGL2 compositor init failed, falling back to 2D:', err);
+    
+}e we fall back to the 2D canvas path.
   if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled) {
     glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
-  } else {
-    glCompositor = null;
-  }
-  if (!glCompositor) {
-    vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
-  } else {
-    vcamCtx = null; // GL path owns the canvas; 2D context not needed
-  }
+ 
 
-  if (vcamDriverReady) {
-    // Check if the native addon is available
-    try {
-      const avail = await window.electronAPI.vcamAvailable();
-      vcamNativeAvailable = !!avail.available;
-    } catch { vcamNativeAvailable = false; }
-
-    if (vcamNativeAvailable) {
-      // Initialize shared memory via the native addon in the main process
-      try {
-        const result = await window.electronAPI.vcamInit({ slot: vcamSlot, width: w, height: h });
-        if (result.ok) {
-          vcamNativeReady = true;
-          vcamBadge.classList.remove('hidden');
-          setVcamStatus('green', `Virtual Camera active — ${slotLabel(vcamSlot)}`);
-        } else {
-          vcamNativeReady = false;
-          vcamBadge.classList.add('hidden');
-          setVcamStatus('yellow', 'Driver registered but shared memory init failed — use OBS Window Capture');
+ry Status('yellow', 'Driver registered but shared memory init failed — use OBS Window Capture');
         }
       } catch (err) {
         vcamNativeReady = false;
@@ -1314,21 +978,14 @@ async function startVcamOutput() {
         setVcamStatus('yellow', 'Virtual cam init error — use OBS Window Capture');
       }
     } else {
-      vcamNativeReady = false;
-      vcamBadge.classList.add('hidden');
-      setVcamStatus('yellow', 'Native addon not built — use OBS Window Capture');
-    }
+      vcamNa
     startFrameLoop(w, h);
   } else {
     // No driver installed yet: still run the preview loop so green screen works
     startFrameLoop(w, h);
   }
-}
 
-function startFrameLoop(w, h) {
-  cancelFrame();
-  if (greenscreenEnabled && segmentationReady) {
-    // Greenscreen composites on the 2D canvas. If the GL compositor was active
+funccelFrame();roon the 2D canvas. If the GL compositor was active
     // for the raw path, release it and acquire a 2D context for segmentation.
     if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
     if (!vcamCtx) vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
@@ -1344,10 +1001,7 @@ function startGlRawFrameLoop(w, h) {
   function draw() {
     if (!currentStream || !glCompositor) return;
     glCompositor.setAdjust(gsExposureValue, gsContrastValue, gsSaturationValue);
-    glCompositor.draw(cameraVideo);
-    sendFrameToVcam(w, h);
-    perfFrameCount++;
-    scheduleFrame(draw);
+    glComposaw);
   }
   scheduleFrame(draw);
 }
@@ -1375,13 +1029,10 @@ function sendFrameToVcam(width, height) {
   if (vcamFrameInFlight) return; // main process still writing the previous frame
   vcamFrameInFlight = true;
   const t0 = performance.now();
-  // Phase 2: read back from the WebGL2 compositor's reusable buffer when active
-  // (single readPixels + in-place Y-flip), otherwise from the 2D canvas.
+  // Phase 2: read baccanvas.
   let buf;
-  if (glCompositor) {
-    buf = glCompositor.readPixels();
+  if (glCompositea
   } else {
-    const img = vcamCtx.getImageData(0, 0, width, height);
     buf = img.data.buffer;
   }
   // Exponential moving average of the GPU→CPU readback cost (dev perf HUD).
@@ -1765,18 +1416,6 @@ btnInstallVcam.addEventListener('click', installVcamDriver);
 btnInstallVcamSettings.addEventListener('click', installVcamDriver);
 btnActivateLicense.addEventListener('click', activateLicense);
 btnClearLicense.addEventListener('click', clearLicense);
-
-// ─── Forum account event listeners ───────────────────────────────────────────
-btnForumLogin.addEventListener('click', doForumLogin);
-btnForumLogout.addEventListener('click', doForumLogout);
-btnForumRegister.addEventListener('click', openForumRegister);
-linkForumReset.addEventListener('click', (e) => { e.preventDefault(); openForumReset(); });
-forumPasswordInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') doForumLogin();
-});
-forumEmailInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') forumPasswordInput.focus();
-});
 
 // ─── About / social links ────────────────────────────────────────────────────
 if (window.electronAPI) {

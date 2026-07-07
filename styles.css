@@ -1284,20 +1284,6 @@ body.clean-mode #vcam-canvas {
   border-radius: 10px;
 }
 
-.forum-premium-badge {
-  display: inline-block;
-  width: fit-content;
-  margin-top: 3px;
-  padding: 1px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: #fff;
-  background: var(--green);
-  border-radius: 10px;
-}
-
 .link-btn {
   background: transparent;
   color: var(--text-muted);

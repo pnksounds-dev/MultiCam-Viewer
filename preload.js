@@ -56,7 +56,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   forumGetSession:  () => ipcRenderer.invoke('forum:getSession'),
   forumGetRegisterUrl: () => ipcRenderer.invoke('forum:getRegisterUrl'),
   forumGetResetUrl:    () => ipcRenderer.invoke('forum:getResetUrl'),
-  forumCheckPremium:   () => ipcRenderer.invoke('forum:checkPremium'),
 
   // ── App info ──
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),

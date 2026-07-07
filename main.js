@@ -21,8 +21,6 @@ const {
   storeSession,
   clearForumSession,
   isJwtExpired,
-  checkPremiumEntitlement,
-  FORUM_REGISTER_URL,
   FORUM_PASSWORD_RESET_URL,
 } = require('./lib/forumAuth');
 
@@ -761,58 +759,6 @@ ipcMain.handle('license:check', async (e) => {
   return result;
 });
 
-// ─── Forum account IPC (login runs in main process) ─────────────────────────
-// The forum at pnksounds.dev is the identity provider. The JWT + user blob is
-// persisted encrypted via Electron safeStorage (OS keychain). The renderer
-// never sees the raw JWT unless it needs it for Supabase queries.
-
-ipcMain.handle('forum:login', async (e, creds) => {
-  const email = creds && typeof creds.email === 'string' ? creds.email.trim() : '';
-  const password = creds && typeof creds.password === 'string' ? creds.password : '';
-  if (!email || !password) {
-    return { ok: false, error: 'Enter your forum email and password.' };
-  }
-  if (email.length > 256 || password.length > 256) {
-    return { ok: false, error: 'Invalid input.' };
-  }
-  try {
-    const result = await forumLogin(email, password);
-    storeSession(result.token, result.user);
-    logToFile('Forum login success for user: ' + result.user.username);
-    return { ok: true, user: result.user };
-  } catch (err) {
-    logToFile('Forum login failed: ' + (err.message || err));
-    return { ok: false, error: err.message || 'Login failed.' };
-  }
-});
-
-ipcMain.handle('forum:logout', async () => {
-  clearForumSession();
-  logToFile('Forum logout');
-  return { ok: true };
-});
-
-ipcMain.handle('forum:getSession', async () => {
-  const session = restoreSession();
-  if (!session) return { ok: false };
-  return { ok: true, user: session.user };
-});
-
-ipcMain.handle('forum:getRegisterUrl', async () => FORUM_REGISTER_URL);
-ipcMain.handle('forum:getResetUrl', async () => FORUM_PASSWORD_RESET_URL);
-
-// Check whether the logged-in forum user has premium for this app.
-// Queries the app_entitlements table in Supabase via the forum JWT (RLS).
-ipcMain.handle('forum:checkPremium', async () => {
-  try {
-    const result = await checkPremiumEntitlement();
-    return result;
-  } catch (err) {
-    logToFile('Forum premium check failed: ' + (err.message || err));
-    return { premium: false, source: 'none' };
-  }
-});
-
 ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
@@ -853,32 +799,8 @@ ipcMain.handle('window:minimize', (e) => {
   if (w) w.minimize();
   return true;
 });
-
-ipcMain.handle('window:toggleMaximize', (e) => {
-  const w = BrowserWindow.fromWebContents(e.sender);
-  if (!w) return false;
-  if (w.isMaximized()) {
-    w.unmaximize();
-    return false;
-  }
-  w.maximize();
-  return true;
-});
-
 ipcMain.handle('window:isMaximized', (e) => {
   const w = BrowserWindow.fromWebContents(e.sender);
-  return w ? w.isMaximized() : false;
-});
-
-// ─── App Lifecycle ────────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
-  logToFile('App ready. userData: ' + app.getPath('userData'));
-  logToFile('Initial appSettings: ' + JSON.stringify(appSettings));
-
-  // Verify critical bundled binaries are present and non-empty.
-  const integrity = checkBundleIntegrity(getResourcesPath());
-  for (const item of integrity) {
-    if (!item.ok) {
       logToFile(`Integrity warning: ${item.name} missing or too small (size=${item.size})`);
     }
   }
