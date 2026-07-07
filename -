@@ -1,9 +1,0 @@
-[ {
-   "description": "",
-   "devtoolsFrontendUrl": "/devtools/inspector.html?ws=localhost:9222/devtools/page/DE7D8D579F484DA735599AC625D391B1",
-   "id": "DE7D8D579F484DA735599AC625D391B1",
-   "title": "MultiCam Viewer",
-   "type": "page",
-   "url": "file:///E:/ai%20developer/usb%20webcam%20app/index.html",
-   "webSocketDebuggerUrl": "ws://localhost:9222/devtools/page/DE7D8D579F484DA735599AC625D391B1"
-} ]

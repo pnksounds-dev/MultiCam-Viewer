@@ -175,7 +175,10 @@ let nextPaneId = 1;
 // ÔöÇÔöÇÔöÇ Premium license state ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let licensedCameras = 2; // 2 for free, 4 when a valid license is activated
 let currentLicenseKey = '';
-let forumPremium = false; // true when the forum admin granted premium for this user
+let forumPremium = false; // true when the user has premium via PNKSOUNDS subscription
+let forumPremiumSource = 'none'; // 'stripe', 'admin', or 'none'
+let forumSubscription = null; // subscription details from entitlement check
+let entitlementCheckTimer = null;
 
 // ÔöÇÔöÇÔöÇ Green screen state ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 let greenscreenEnabled = false;
@@ -819,7 +822,13 @@ function updatePremiumUI() {
   if (isPremium()) {
     const cams = (forumPremium || licensedCameras > 2) ? 4 : 2;
     let label = `Premium active: up to ${cams} cameras`;
-    if (forumPremium && licensedCameras <= 2) label += ' (forum account)';
+    if (forumPremium && licensedCameras <= 2) {
+      if (forumPremiumSource === 'stripe') {
+        label += ' (subscription)';
+      } else if (forumPremiumSource === 'admin') {
+        label += ' (admin grant)';
+      }
+    }
     premiumStatusText.textContent = label;
     premiumStatusText.style.color = 'var(--green)';
   } else {
@@ -830,7 +839,7 @@ function updatePremiumUI() {
 }
 
 function showPremiumUpgrade(message) {
-  statusText.textContent = message || 'Premium feature ÔÇö activate a license key to unlock';
+  statusText.textContent = message || 'Premium feature — subscribe or activate a license key to unlock';
   settingsOverlay.classList.remove('hidden');
 }
 
@@ -976,15 +985,28 @@ async function checkForumSession() {
   }
 }
 
-// Query the app_entitlements table (via the forum JWT + Supabase RLS) to see
-// if the admin has granted premium for this app. Either a forum entitlement OR
-// a valid license key unlocks premium.
+// Query the PNKSOUNDS API to see if the user has premium for this app.
+// Either a Stripe subscription/admin grant OR a valid license key unlocks premium.
 async function checkForumPremium() {
   if (!window.electronAPI || !window.electronAPI.forumCheckPremium) return;
   try {
     const result = await window.electronAPI.forumCheckPremium();
     const wasPremium = isPremium();
+
+    // If not authenticated, the session expired \u2014 show login form
+    if (result && !result.authenticated) {
+      forumPremium = false;
+      forumPremiumSource = 'none';
+      forumSubscription = null;
+      if (forumPremiumBadge) forumPremiumBadge.classList.add('hidden');
+      renderForumProfile(null);
+      updatePremiumUI();
+      return;
+    }
+
     forumPremium = !!(result && result.premium);
+    forumPremiumSource = (result && result.source) || 'none';
+    forumSubscription = (result && result.subscription) || null;
     if (forumPremiumBadge) forumPremiumBadge.classList.toggle('hidden', !forumPremium);
     updatePremiumUI();
     // If premium was just granted via forum, make sure greenscreen can be used.
@@ -1033,6 +1055,8 @@ async function doForumLogout() {
     await window.electronAPI.forumLogout();
   } catch {}
   forumPremium = false;
+  forumPremiumSource = 'none';
+  forumSubscription = null;
   if (forumPremiumBadge) forumPremiumBadge.classList.add('hidden');
   updatePremiumUI();
   renderForumProfile(null);
@@ -1777,6 +1801,33 @@ forumPasswordInput.addEventListener('keydown', (e) => {
 forumEmailInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') forumPasswordInput.focus();
 });
+
+// ─── Upgrade / account management links ──────────────────────────────────────
+const btnUpgradePremium = document.getElementById('btn-upgrade-premium');
+const btnManageAccount  = document.getElementById('btn-manage-account');
+
+if (btnUpgradePremium) {
+  btnUpgradePremium.addEventListener('click', async () => {
+    try {
+      const url = await window.electronAPI?.forumGetPricingUrl?.();
+      if (url) window.electronAPI?.openExternal(url);
+    } catch {}
+  });
+}
+if (btnManageAccount) {
+  btnManageAccount.addEventListener('click', async () => {
+    try {
+      const url = await window.electronAPI?.forumGetAccountUrl?.();
+      if (url) window.electronAPI?.openExternal(url);
+    } catch {}
+  });
+}
+
+// Periodic entitlement re-check (every 30 minutes) to catch subscription
+// cancellations, expirations, or new purchases during long-running sessions.
+entitlementCheckTimer = setInterval(() => {
+  if (window.electronAPI?.forumCheckPremium) checkForumPremium();
+}, 30 * 60 * 1000);
 
 // ÔöÇÔöÇÔöÇ About / social links ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 if (window.electronAPI) {

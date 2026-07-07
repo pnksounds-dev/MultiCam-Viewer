@@ -24,6 +24,8 @@ const {
   checkPremiumEntitlement,
   FORUM_REGISTER_URL,
   FORUM_PASSWORD_RESET_URL,
+  PRICING_URL,
+  ACCOUNT_URL,
 } = require('./lib/forumAuth');
 
 // ÔöÇÔöÇÔöÇ Settings persistence ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
@@ -800,16 +802,18 @@ ipcMain.handle('forum:getSession', async () => {
 
 ipcMain.handle('forum:getRegisterUrl', async () => FORUM_REGISTER_URL);
 ipcMain.handle('forum:getResetUrl', async () => FORUM_PASSWORD_RESET_URL);
+ipcMain.handle('forum:getPricingUrl', async () => PRICING_URL);
+ipcMain.handle('forum:getAccountUrl', async () => ACCOUNT_URL);
 
 // Check whether the logged-in forum user has premium for this app.
-// Queries the app_entitlements table in Supabase via the forum JWT (RLS).
+// Calls GET /api/entitlements/multicam on the PNKSOUNDS API with the JWT.
 ipcMain.handle('forum:checkPremium', async () => {
   try {
     const result = await checkPremiumEntitlement();
     return result;
   } catch (err) {
     logToFile('Forum premium check failed: ' + (err.message || err));
-    return { premium: false, source: 'none' };
+    return { premium: false, source: 'none', authenticated: true };
   }
 });
 
