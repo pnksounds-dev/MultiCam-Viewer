@@ -49,7 +49,7 @@ function logToFile(msg) {
   try {
     const dir = path.dirname(LOG_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`, 'utf8');
+    fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] [PID:${process.pid}] ${msg}\n`, 'utf8');
   } catch {}
 }
 
@@ -134,6 +134,7 @@ function getVcamForSlot(slot) {
 
 // ─── Splash Window ───────────────────────────────────────────────────────────
 let splashWindow = null;
+let isInitializing = false; // true during splash→main transition to suppress premature window-all-closed
 
 function createSplash() {
   logToFile('Creating splash window');
@@ -568,6 +569,7 @@ function createWindow(show = true) {
     win.webContents.send('vcam-dll-path', getVcamDllPath());
     win.webContents.send('window-index', slotIndex);
     win.webContents.send('window-title', windowTitle);
+    win.webContents.send('process-pid', process.pid);
 
     // Close the splash screen once the main window is ready to show.
     if (splashWindow && !splashWindow.isDestroyed()) {
@@ -866,7 +868,7 @@ ipcMain.handle('window:isMaximized', (e) => {
 });
 
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
-app.setAppUserModelId('com.multicam.viewer');
+app.setAppUserModelId('com.multicam.viewer.' + process.pid);
 
 app.whenReady().then(async () => {
   logToFile('App ready. userData: ' + app.getPath('userData'));
@@ -901,12 +903,14 @@ app.whenReady().then(async () => {
   // Show splash screen first (unless disabled in settings).
   if (appSettings.showSplash) {
     logToFile('Splash enabled, creating splash');
+    isInitializing = true;
     createSplash();
     // Delay the main window slightly so the splash is visible first and
     // doesn't get interfered with by the main window being created.
     setTimeout(() => {
       logToFile('Delayed main window creation');
       createWindow(false);
+      isInitializing = false;
     }, 400);
   } else {
     logToFile('Splash disabled');
@@ -916,6 +920,7 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', stopAllScrcpy);
 app.on('window-all-closed', () => {
+  if (isInitializing || windows.size > 0) return;
   stopAllScrcpy();
   app.quit();
 });

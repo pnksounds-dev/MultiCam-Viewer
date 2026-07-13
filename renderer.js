@@ -163,6 +163,7 @@ let activeScrcpyTitle = null;   // currently running scrcpy window title (if any
 let sourceOptions    = [];      // metadata for each dropdown option (by value)
 let lastScrcpyError  = '';      // last error line from scrcpy output
 let windowIndex      = 0;       // 0-based window index (0 = first window)
+let processPid       = 0;       // PID of the Electron main process (for unique scrcpy titles)
 let vcamNativeReady  = false;   // true when the shared-memory frame bridge is active
 
 // ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
@@ -291,6 +292,9 @@ async function init() {
     });
     window.electronAPI.onWindowIndex((idx) => {
       windowIndex = idx;
+    });
+    window.electronAPI.onProcessPid((pid) => {
+      processPid = pid;
     });
     window.electronAPI.onWindowTitle((title) => {
       document.title = title;
@@ -486,7 +490,7 @@ async function startSelected() {
 // ── Phone camera via scrcpy + desktop capture ──
 async function startPhoneCamera(opt) {
   const resolution = resSelect.value || '1280x720';
-  const windowTitle = `MultiCamCap_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
+  const windowTitle = `MultiCamCap_${processPid}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
   activeScrcpyTitle = windowTitle;
   lastScrcpyError = '';
 
@@ -714,7 +718,7 @@ function startSecondaryPaneCamera(id) {
 
 async function startSecondaryPhoneCamera(pane, opt) {
   const resolution = resSelect.value || '1280x720';
-  const windowTitle = `MultiCamCap${pane.id}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
+  const windowTitle = `MultiCamCap${processPid}_${pane.id}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
   pane.scrcpyTitle = windowTitle;
 
   const start = await window.electronAPI.startScrcpy({

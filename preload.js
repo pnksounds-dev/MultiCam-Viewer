@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onVcamDllPath: (cb) => ipcRenderer.on('vcam-dll-path', (e, p) => cb(p)),
   onWindowIndex: (cb) => ipcRenderer.on('window-index', (e, idx) => cb(idx)),
   onWindowTitle: (cb) => ipcRenderer.on('window-title', (e, title) => cb(title)),
+  onProcessPid:  (cb) => ipcRenderer.on('process-pid', (e, pid) => cb(pid)),
 
   // ── Settings ──
   getSettings: () => ipcRenderer.invoke('settings:get'),
