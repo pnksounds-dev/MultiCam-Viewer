@@ -36,8 +36,6 @@ const DEFAULT_SETTINGS = {
   resolution: '1280x720',
   lastDeviceIndex: '',
   greenscreenEnabled: false,
-  gsThreshold: 50,
-  gsGap: 0,
   bgColor: '#00ff00',
   exposure: 0,
   contrast: 0,
@@ -814,10 +812,26 @@ ipcMain.handle('app:getVersion', async () => {
   return app.getVersion();
 });
 
-// Deliberate app quit — used by the "Exit App" button in Settings so the
-// user doesn't accidentally close the app via the taskbar/window X.
-ipcMain.handle('app:quit', async () => {
-  logToFile('App quit requested via IPC');
+// Exit App — closes the calling window. If it's the last window, quits the app.
+ipcMain.handle('app:quit', async (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  logToFile('Exit App requested from window: ' + (win ? win.getTitle() : 'unknown'));
+
+  if (windows.size > 1 && win && !win.isDestroyed()) {
+    // Multiple windows open — only close this one, stop its scrcpy streams.
+    // Window title is "MultiCam{N}" where N = slot + 1; scrcpy titles end with _{slot}.
+    const slotMatch = win.getTitle().match(/MultiCam(\d+)/);
+    const slot = slotMatch ? parseInt(slotMatch[1], 10) - 1 : -1;
+    for (const title of [...scrcpyProcs.keys()]) {
+      if (slot >= 0 && title.endsWith(`_${slot}`)) {
+        stopScrcpy(title);
+      }
+    }
+    win.close();
+    return;
+  }
+
+  // Last window — quit the entire app
   stopAllScrcpy();
   app.quit();
 });

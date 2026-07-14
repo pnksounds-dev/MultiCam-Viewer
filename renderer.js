@@ -81,25 +81,25 @@ const linkDiscord       = document.getElementById('link-discord');
 
 // ─── Green screen DOM refs ──────────────────────────────────────────────────
 const btnGreenscreen     = document.getElementById('btn-greenscreen');
+const btnGsOptions       = document.getElementById('btn-gs-options');
+const gsBtnLabel         = document.getElementById('gs-btn-label');
 const greenscreenControls = document.getElementById('greenscreen-controls');
 const bgColorInput       = document.getElementById('bg-color');
 const bgImageInput       = document.getElementById('bg-image');
 const btnClearBg         = document.getElementById('btn-clear-bg');
 const greenscreenBadge   = document.getElementById('greenscreen-badge');
-const gsThreshold        = document.getElementById('gs-threshold');
-const gsThresholdVal     = document.getElementById('gs-threshold-val');
-const gsGap              = document.getElementById('gs-gap');
-const gsGapVal           = document.getElementById('gs-gap-val');
-const stThreshold        = document.getElementById('settings-threshold');
-const stThresholdVal     = document.getElementById('settings-threshold-val');
-const stGap              = document.getElementById('settings-gap');
-const stGapVal           = document.getElementById('settings-gap-val');
 const stExposure         = document.getElementById('settings-exposure');
 const stExposureVal      = document.getElementById('settings-exposure-val');
 const stContrast         = document.getElementById('settings-contrast');
 const stContrastVal      = document.getElementById('settings-contrast-val');
 const stSaturation       = document.getElementById('settings-saturation');
 const stSaturationVal    = document.getElementById('settings-saturation-val');
+const settingsPreviewCanvas = document.getElementById('settings-preview-canvas');
+const settingsPreviewEmpty  = document.getElementById('settings-preview-empty');
+const settingsPreviewCtx = settingsPreviewCanvas
+  ? settingsPreviewCanvas.getContext('2d', { alpha: false })
+  : null;
+let settingsPreviewRaf = null;
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentStream    = null;
@@ -183,8 +183,6 @@ let bgImageElement     = null;
 let selfieSegmentation = null;
 let segmentationReady  = false;
 let isSegmenting       = false;
-let gsThresholdValue   = 50;
-let gsGapValue         = 0;
 let gsExposureValue    = 0;
 let gsContrastValue    = 0;
 let gsSaturationValue  = 0;
@@ -224,24 +222,8 @@ function applySettings(settings) {
   }
   if (settings.greenscreenEnabled && isPremium()) {
     greenscreenEnabled = true;
-    btnGreenscreen.classList.add('active');
-    greenscreenControls.classList.remove('hidden');
-    greenscreenBadge.classList.remove('hidden');
+    updateGreenscreenUI();
     initSegmentation();
-  }
-  if (typeof settings.gsThreshold === 'number') {
-    gsThresholdValue = settings.gsThreshold;
-    gsThreshold.value = settings.gsThreshold;
-    gsThresholdVal.textContent = String(settings.gsThreshold);
-    stThreshold.value = settings.gsThreshold;
-    stThresholdVal.textContent = String(settings.gsThreshold);
-  }
-  if (typeof settings.gsGap === 'number') {
-    gsGapValue = settings.gsGap;
-    gsGap.value = settings.gsGap;
-    gsGapVal.textContent = String(settings.gsGap);
-    stGap.value = settings.gsGap;
-    stGapVal.textContent = String(settings.gsGap);
   }
   if (settings.bgColor) {
     bgColorValue = settings.bgColor;
@@ -341,8 +323,11 @@ async function init() {
   }
   await checkVirtualCameraDriver();
 
-  // Auto-refresh when a UVC device is plugged/unplugged
-  navigator.mediaDevices.addEventListener('devicechange', refreshSources);
+  // Auto-refresh when a UVC device is plugged/unplugged.
+  // Use the debounced wrapper so a burst of devicechange events (common when
+  // scrcpy starts or another window opens/closes a camera) only triggers one
+  // refresh cycle instead of many concurrent ones.
+  navigator.mediaDevices.addEventListener('devicechange', refreshSourcesDebounced);
 
   // If no phones were found on the first scan, retry periodically — the ADB
   // daemon may still be starting up after a cold reboot.
@@ -372,7 +357,47 @@ function isVirtualOutputOnly(label) {
   return VIRTUAL_OUTPUT_ONLY.some(v => l.includes(v));
 }
 
+// Concurrency + debounce guard for refreshSources.
+// Without this, rapid devicechange events (fired when scrcpy starts or when
+// another window opens/closes a camera) cause multiple concurrent refreshSources
+// calls, each making its own getUserMedia probe.  On Windows, concurrent
+// getUserMedia calls that touch an in-use camera can deadlock the Chromium media
+// pipeline, freezing every window — even after the problematic window is closed.
+let refreshSourcesRunning = false;
+let refreshSourcesQueued   = false;
+let deviceLabelsObtained   = false; // true after the first successful getUserMedia probe
+
+// Debounced wrapper used by the devicechange listener and retry timer.
+let refreshSourcesTimer = null;
+function refreshSourcesDebounced() {
+  if (refreshSourcesTimer) clearTimeout(refreshSourcesTimer);
+  refreshSourcesTimer = setTimeout(() => {
+    refreshSourcesTimer = null;
+    refreshSources();
+  }, 500);
+}
+
 async function refreshSources() {
+  // Concurrency guard — if a scan is already in progress, mark a re-run and
+  // return.  The in-progress call will pick up the queued flag when it finishes.
+  if (refreshSourcesRunning) {
+    refreshSourcesQueued = true;
+    return;
+  }
+  refreshSourcesRunning = true;
+  try {
+    await _refreshSourcesInner();
+  } finally {
+    refreshSourcesRunning = false;
+    if (refreshSourcesQueued) {
+      refreshSourcesQueued = false;
+      // Run one more time to pick up the latest device state.
+      refreshSources();
+    }
+  }
+}
+
+async function _refreshSourcesInner() {
   statusText.textContent = 'Scanning for phones…';
   sourceOptions = [];
 
@@ -411,9 +436,24 @@ async function refreshSources() {
   }
 
   // 2) Real UVC cameras (includes Android 14+ native USB webcam mode)
+  // The getUserMedia probe is needed ONCE to unlock device labels (Chrome only
+  // populates labels after a permission grant).  After the first success we
+  // skip the probe and rely on enumerateDevices alone — this avoids opening the
+  // default camera on every refresh, which can deadlock the media pipeline when
+  // another window is already using that camera.
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null);
-    if (probe) probe.getTracks().forEach(t => t.stop());
+    if (!deviceLabelsObtained && !currentStream && secondaryPanes.every(p => !p.stream)) {
+      // First-time probe (no active streams anywhere) — race with a 3s timeout
+      // so a hung driver doesn't block refreshSources forever.
+      const probe = await Promise.race([
+        navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null),
+        new Promise(r => setTimeout(() => r(null), 3000)),
+      ]);
+      if (probe) {
+        probe.getTracks().forEach(t => t.stop());
+        deviceLabelsObtained = true;
+      }
+    }
     const devs = await navigator.mediaDevices.enumerateDevices();
     devs.filter(d => d.kind === 'videoinput' && !isVirtualOutputOnly(d.label))
         .forEach(d => {
@@ -1337,6 +1377,83 @@ function setVideoFilters(ctx) {
   ctx.filter = `brightness(${exposure}) contrast(${contrast}) saturate(${saturation})`;
 }
 
+// ─── Settings live preview ────────────────────────────────────────────────────
+// Draws a small live feed under Video Adjustments so users can tune exposure /
+// contrast / saturation without the main camera being fully obscured.
+function stopSettingsPreview() {
+  if (settingsPreviewRaf != null) {
+    cancelAnimationFrame(settingsPreviewRaf);
+    settingsPreviewRaf = null;
+  }
+}
+
+function drawSettingsPreviewFrame() {
+  if (!settingsPreviewCanvas || !settingsPreviewCtx) return;
+
+  const hasCamera = !!(currentStream && cameraVideo && cameraVideo.readyState >= 2);
+  if (settingsPreviewEmpty) {
+    settingsPreviewEmpty.classList.toggle('hidden', hasCamera);
+    settingsPreviewEmpty.textContent = hasCamera ? '' : 'No camera selected';
+  }
+  if (!hasCamera) {
+    settingsPreviewCtx.clearRect(0, 0, settingsPreviewCanvas.width || 1, settingsPreviewCanvas.height || 1);
+    return;
+  }
+
+  // Prefer the processed output canvas when green screen is active (already filtered).
+  const useProcessed = greenscreenEnabled && vcamCanvas && vcamCanvas.width > 0 && vcamCanvas.classList.contains('active');
+  const src = useProcessed ? vcamCanvas : cameraVideo;
+  const srcW = useProcessed ? vcamCanvas.width : (cameraVideo.videoWidth || 1280);
+  const srcH = useProcessed ? vcamCanvas.height : (cameraVideo.videoHeight || 720);
+  if (!srcW || !srcH) return;
+
+  // Keep preview canvas resolution modest for performance.
+  const maxW = 480;
+  const scale = Math.min(1, maxW / srcW);
+  const w = Math.max(1, Math.round(srcW * scale));
+  const h = Math.max(1, Math.round(srcH * scale));
+  if (settingsPreviewCanvas.width !== w || settingsPreviewCanvas.height !== h) {
+    settingsPreviewCanvas.width = w;
+    settingsPreviewCanvas.height = h;
+  }
+
+  settingsPreviewCtx.save();
+  if (useProcessed) {
+    // Processed path already includes exposure/contrast/saturation + GS.
+    settingsPreviewCtx.filter = 'none';
+  } else {
+    setVideoFilters(settingsPreviewCtx);
+  }
+  settingsPreviewCtx.drawImage(src, 0, 0, w, h);
+  settingsPreviewCtx.restore();
+  settingsPreviewCtx.filter = 'none';
+}
+
+function settingsPreviewLoop() {
+  if (!settingsOverlay || settingsOverlay.classList.contains('hidden')) {
+    settingsPreviewRaf = null;
+    return;
+  }
+  drawSettingsPreviewFrame();
+  settingsPreviewRaf = requestAnimationFrame(settingsPreviewLoop);
+}
+
+function startSettingsPreview() {
+  if (!settingsPreviewCanvas || !settingsPreviewCtx) return;
+  stopSettingsPreview();
+  settingsPreviewRaf = requestAnimationFrame(settingsPreviewLoop);
+}
+
+function openSettings() {
+  settingsOverlay.classList.remove('hidden');
+  startSettingsPreview();
+}
+
+function closeSettings() {
+  settingsOverlay.classList.add('hidden');
+  stopSettingsPreview();
+}
+
 // Send RGBA frame data to the virtual camera via IPC
 // UnityCapture expects RGBA8 (format=0), top-down row order
 // The DirectShow filter converts RGBA→BGRA and handles bottom-up output internally
@@ -1452,21 +1569,9 @@ function onSegmentationResults(results) {
   vcamCtx.drawImage(results.image, 0, 0, w, h);
   vcamCtx.filter = 'none';
 
-  // 2. Apply mask to keep only the person
+  // 2. Apply mask to keep only the person (MediaPipe soft mask as-is)
   vcamCtx.globalCompositeOperation = 'destination-in';
-  // Adjust edge threshold with contrast/brightness
-  const threshold = gsThresholdValue / 100;
-  const maskBrightness = 1 + (0.5 - threshold) * 1.5;
-  const maskContrast = 1 + threshold * 2;
-  vcamCtx.filter = `brightness(${maskBrightness}) contrast(${maskContrast})`;
-  // Apply gap by shrinking the mask toward the center
-  const gap = Math.min(gsGapValue, Math.floor(Math.min(w, h) / 4));
-  if (gap > 0) {
-    vcamCtx.drawImage(results.segmentationMask, gap, gap, w - gap * 2, h - gap * 2);
-  } else {
-    vcamCtx.drawImage(results.segmentationMask, 0, 0, w, h);
-  }
-  vcamCtx.filter = 'none';
+  vcamCtx.drawImage(results.segmentationMask, 0, 0, w, h);
 
   // 3. Draw new background behind the person
   vcamCtx.globalCompositeOperation = 'destination-over';
@@ -1512,12 +1617,23 @@ function restartFrameLoop() {
   startFrameLoop(w, h);
 }
 
+function setGsPopoverOpen(open) {
+  if (!greenscreenControls) return;
+  greenscreenControls.classList.toggle('hidden', !open);
+  if (btnGsOptions) btnGsOptions.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function updateGreenscreenUI() {
   const hasStream = !!currentStream;
-  btnGreenscreen.classList.toggle('active', greenscreenEnabled);
-  btnGreenscreen.textContent = greenscreenEnabled ? 'Green Screen: On' : 'Green Screen';
-  greenscreenControls.classList.toggle('hidden', !greenscreenEnabled);
-  greenscreenBadge.classList.toggle('hidden', !greenscreenEnabled);
+  if (btnGreenscreen) btnGreenscreen.classList.toggle('active', greenscreenEnabled);
+  // Update label only — never wipe the button SVG via textContent.
+  if (gsBtnLabel) {
+    gsBtnLabel.textContent = greenscreenEnabled ? 'GS On' : 'Green Screen';
+  }
+  // Options chevron only when GS is on; popover stays closed until user opens it.
+  if (btnGsOptions) btnGsOptions.classList.toggle('hidden', !greenscreenEnabled);
+  if (!greenscreenEnabled) setGsPopoverOpen(false);
+  if (greenscreenBadge) greenscreenBadge.classList.toggle('hidden', !greenscreenEnabled);
 
   if (greenscreenEnabled && hasStream) {
     cameraVideo.classList.add('hidden');
@@ -1677,9 +1793,13 @@ btnOutputWindow.addEventListener('click', () => {
   }, 300);
 });
 btnRefresh.addEventListener('click', refreshSources);
-btnSettings.addEventListener('click', () => settingsOverlay.classList.remove('hidden'));
-btnCloseSettings.addEventListener('click', () => settingsOverlay.classList.add('hidden'));
-settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.classList.add('hidden'); });
+btnSettings.addEventListener('click', openSettings);
+btnCloseSettings.addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+// Keep preview in view when opening settings with Video Adjustments focused.
+if (settingsPreviewCanvas) {
+  settingsPreviewCanvas.addEventListener('click', (e) => e.stopPropagation());
+}
 
 // Exit App — deliberate quit so the user doesn't accidentally close via the window X.
 if (btnExitApp) {
@@ -1805,6 +1925,22 @@ btnGreenscreen.addEventListener('click', () => {
   saveSettingsDebounced({ greenscreenEnabled: greenscreenEnabled });
 });
 
+if (btnGsOptions) {
+  btnGsOptions.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!greenscreenEnabled) return;
+    const isOpen = greenscreenControls && !greenscreenControls.classList.contains('hidden');
+    setGsPopoverOpen(!isOpen);
+  });
+}
+
+// Close GS popover when clicking outside it
+document.addEventListener('click', (e) => {
+  if (!greenscreenControls || greenscreenControls.classList.contains('hidden')) return;
+  const wrap = document.getElementById('greenscreen-wrap');
+  if (wrap && !wrap.contains(e.target)) setGsPopoverOpen(false);
+});
+
 bgColorInput.addEventListener('input', (e) => {
   bgColorValue = e.target.value;
   saveSettingsDebounced({ bgColor: bgColorValue });
@@ -1843,28 +1979,6 @@ function bindSlider(input, valueEl, stateVar, onChange) {
   });
 }
 
-bindSlider(gsThreshold, gsThresholdVal, 'gsThresholdValue', (val) => {
-  gsThresholdValue = val;
-  syncSlider(stThreshold, stThresholdVal, val);
-  saveSettingsDebounced({ gsThreshold: val });
-});
-bindSlider(stThreshold, stThresholdVal, 'gsThresholdValue', (val) => {
-  gsThresholdValue = val;
-  syncSlider(gsThreshold, gsThresholdVal, val);
-  saveSettingsDebounced({ gsThreshold: val });
-});
-
-bindSlider(gsGap, gsGapVal, 'gsGapValue', (val) => {
-  gsGapValue = val;
-  syncSlider(stGap, stGapVal, val);
-  saveSettingsDebounced({ gsGap: val });
-});
-bindSlider(stGap, stGapVal, 'gsGapValue', (val) => {
-  gsGapValue = val;
-  syncSlider(gsGap, gsGapVal, val);
-  saveSettingsDebounced({ gsGap: val });
-});
-
 bindSlider(stExposure, stExposureVal, 'gsExposureValue', (val) => {
   setVideoAdjustment('exposure', val);
   saveSettingsDebounced({ exposure: val });
@@ -1891,14 +2005,35 @@ document.querySelectorAll('.guide-tab').forEach(tab => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    settingsOverlay.classList.add('hidden');
+    if (settingsOverlay && !settingsOverlay.classList.contains('hidden')) closeSettings();
     if (changelogOverlay) changelogOverlay.classList.add('hidden');
+    setGsPopoverOpen(false);
   }
   if (e.key === 'F5')     refreshSources();
 });
 
 window.addEventListener('beforeunload', () => {
+  stopSettingsPreview();
+  // Stop the primary scrcpy process.
   if (activeScrcpyTitle && window.electronAPI) window.electronAPI.stopScrcpy(activeScrcpyTitle);
+  // Stop ALL secondary pane scrcpy processes too — without this, closing a
+  // window orphans the scrcpy processes, which keep holding the phone cameras
+  // and leave off-screen capture windows that confuse desktopCapturer.
+  secondaryPanes.forEach(pane => {
+    if (pane.scrcpyTitle && window.electronAPI) {
+      window.electronAPI.stopScrcpy(pane.scrcpyTitle);
+      pane.scrcpyTitle = null;
+    }
+    if (pane.stream) {
+      pane.stream.getTracks().forEach(t => t.stop());
+      pane.stream = null;
+    }
+  });
+  // Stop the primary stream.
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+  }
 });
 
 // ─── Go ───────────────────────────────────────────────────────────────────────
