@@ -12,6 +12,7 @@ const {
   isValidCameraId,
   isValidWindowTitle,
   isValidResolution,
+  buildScrcpyArgs,
 } = require('./lib/parsers');
 const { checkBundleIntegrity } = require('./lib/integrity');
 const {
@@ -300,7 +301,7 @@ function execFileAsyncSafe(file, args, timeout, includeStderr = false) {
 //  - It CAN be fully occluded or moved off-screen and still be captured
 //  - --window-borderless removes its title bar so the header isn't captured
 // So we start it borderless and off-screen to keep the user's desktop clean.
-function startScrcpyCamera({ serial, cameraId, resolution, maxSize, fps, windowTitle, bounds }) {
+function startScrcpyCamera({ serial, cameraId, resolution, fps, windowTitle, bounds }) {
   stopScrcpy(windowTitle);
 
   // Default placement if bounds unknown
@@ -320,6 +321,9 @@ function startScrcpyCamera({ serial, cameraId, resolution, maxSize, fps, windowT
   winW = Math.max(winW, 320);
   winH = Math.max(winH, 320);
 
+  // maxDim is the fallback value for --max-size if --camera-size fails.
+  const maxDim = Math.max(resW, resH);
+
   // Position the scrcpy capture window off-screen so the user only sees the
   // main MultiCam window. Windows Graphics Capture still works for off-screen
   // windows as long as they are not minimized. --window-borderless removes the
@@ -327,25 +331,16 @@ function startScrcpyCamera({ serial, cameraId, resolution, maxSize, fps, windowT
   const offX = -10000;
   const offY = -10000;
 
-  const args = [
-    '-s', serial,
-    '--video-source=camera',
-    `--camera-id=${cameraId}`,
-    '--no-audio',
-    '--no-control',
-    `--window-title=${windowTitle}`,
-    `--window-x=${offX}`,
-    `--window-y=${offY}`,
-    `--window-width=${winW}`,
-    `--window-height=${winH}`,
-    '--window-borderless',
-  ];
-  if (maxSize) args.push(`--max-size=${maxSize}`);
-  if (fps)     args.push(`--max-fps=${fps}`);
+  const args = buildScrcpyArgs({
+    serial, cameraId, resolution, fps, windowTitle,
+    winW, winH, offX, offY,
+    useMaxSize: false, maxDim,
+  });
 
   try {
     const proc = spawn(SCRCPY(), args, { windowsHide: false });
-    scrcpyProcs.set(windowTitle, { proc, serial });
+    const startTime = Date.now();
+    scrcpyProcs.set(windowTitle, { proc, serial, resolution, maxDim, usedFallback: false, startTime });
 
     let outBuf = '';
     const onData = (d) => {
@@ -360,7 +355,39 @@ function startScrcpyCamera({ serial, cameraId, resolution, maxSize, fps, windowT
     proc.stderr.on('data', onData);
 
     proc.on('exit', (code) => {
+      const entry = scrcpyProcs.get(windowTitle);
       scrcpyProcs.delete(windowTitle);
+
+      // Fallback: if scrcpy exits with an error within 5 seconds of start AND
+      // we used --camera-size (not already a fallback), retry once with
+      // --max-size so the camera still starts at a supported size.
+      if (code !== 0 && entry && !entry.usedFallback && entry.resolution &&
+          (Date.now() - entry.startTime) < 5000) {
+        logToFile(`Camera size ${entry.resolution} not supported, falling back to --max-size=${entry.maxDim}`);
+        const fallbackArgs = buildScrcpyArgs({
+          serial, cameraId, resolution: null, fps, windowTitle,
+          winW, winH, offX, offY,
+          useMaxSize: true, maxDim: entry.maxDim,
+        });
+        try {
+          const fbProc = spawn(SCRCPY(), fallbackArgs, { windowsHide: false });
+          scrcpyProcs.set(windowTitle, { proc: fbProc, serial, resolution: null, maxDim: entry.maxDim, usedFallback: true, startTime: Date.now() });
+          fbProc.stdout.on('data', onData);
+          fbProc.stderr.on('data', onData);
+          fbProc.on('exit', (fbCode) => {
+            scrcpyProcs.delete(windowTitle);
+            for (const w of windows) {
+              if (!w.isDestroyed()) {
+                w.webContents.send('scrcpy-exited', { windowTitle, code: fbCode, stderr: outBuf.slice(-600) });
+              }
+            }
+          });
+          return; // Don't send the exit event — the fallback proc is now running
+        } catch (retryErr) {
+          // Fallback spawn failed — fall through to report the original error
+        }
+      }
+
       for (const w of windows) {
         if (!w.isDestroyed()) {
           w.webContents.send('scrcpy-exited', { windowTitle, code, stderr: outBuf.slice(-600) });
@@ -752,15 +779,12 @@ ipcMain.handle('scrcpy:start', async (e, opts) => {
   if (!isValidWindowTitle(o.windowTitle)) return { ok: false, error: 'Invalid window title' };
 
   const resolution = isValidResolution(o.resolution) ? o.resolution : '1280x720';
-  const [resW, resH] = resolution.split('x').map(Number);
-  const maxSize = Math.max(resW, resH);
 
   const safeOpts = {
     serial: o.serial,
     cameraId: String(o.cameraId),
     windowTitle: o.windowTitle,
     resolution,
-    maxSize: clampInt(maxSize, 320, 7680, 0),
     fps:     o.fps != null ? clampInt(o.fps, 1, 240, 0) : 0,
   };
 
@@ -777,6 +801,14 @@ ipcMain.handle('scrcpy:stop',  async (e, windowTitle) => {
 // Find the desktopCapturer source id for a given scrcpy window title
 ipcMain.handle('capture:findWindow', async (e, windowTitle) => {
   if (!isValidWindowTitle(windowTitle)) return { ok: false };
+  // Don't return a window whose scrcpy process has already exited. This happens
+  // when --camera-size fails (e.g., non-16:9 sizes the camera doesn't support):
+  // the first scrcpy creates a brief window, exits, and the fallback starts. If
+  // we return the dead window, the renderer captures a ghost and fails. By
+  // returning ok:false, the renderer keeps polling and finds the fallback's
+  // window once it appears.
+  const entry = scrcpyProcs.get(windowTitle);
+  if (!entry || entry.proc.killed) return { ok: false };
   const sources = await desktopCapturer.getSources({
     types: ['window'],
     thumbnailSize: { width: 0, height: 0 },

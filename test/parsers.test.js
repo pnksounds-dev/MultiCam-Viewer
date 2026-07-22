@@ -13,6 +13,7 @@ const {
   isValidCameraId,
   isValidWindowTitle,
   isValidResolution,
+  buildScrcpyArgs,
   ringNextIndex,
   frameSlotBytes,
 } = require('../lib/parsers');
@@ -156,4 +157,33 @@ test('frameSlotBytes: RGBA8 size, guards negatives', () => {
   assert.equal(frameSlotBytes(1280, 720), 1280 * 720 * 4);
   assert.equal(frameSlotBytes(0, 720), 0);
   assert.equal(frameSlotBytes(-5, 720), 0);
+});
+
+// ─── buildScrcpyArgs ──────────────────────────────────────────────────────────
+const baseArgs = { serial: 'SER123', cameraId: '0', fps: 30, windowTitle: 'Win', winW: 1280, winH: 720, offX: -10000, offY: -10000 };
+
+test('buildScrcpyArgs: uses --camera-size for exact resolution', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: '1920x1080', useMaxSize: false, maxDim: 1920 });
+  assert.ok(args.includes('--camera-size=1920x1080'), 'should include --camera-size=1920x1080');
+  assert.ok(!args.some(a => a.startsWith('--max-size')), 'should NOT include --max-size');
+});
+
+test('buildScrcpyArgs: uses --max-size when useMaxSize fallback is set', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: null, useMaxSize: true, maxDim: 1280 });
+  assert.ok(args.includes('--max-size=1280'), 'should include --max-size=1280');
+  assert.ok(!args.some(a => a.startsWith('--camera-size')), 'should NOT include --camera-size');
+});
+
+test('buildScrcpyArgs: portrait resolution passed as --camera-size', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: '1080x1920', useMaxSize: false, maxDim: 1080 });
+  assert.ok(args.includes('--camera-size=1080x1920'), 'should include portrait --camera-size');
+});
+
+test('buildScrcpyArgs: includes fps and core flags', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: '1280x720', useMaxSize: false, maxDim: 1280 });
+  assert.ok(args.includes('-s'), 'should include serial flag');
+  assert.ok(args.includes('--video-source=camera'));
+  assert.ok(args.includes('--camera-id=0'));
+  assert.ok(args.includes('--max-fps=30'));
+  assert.ok(args.includes('--window-borderless'));
 });

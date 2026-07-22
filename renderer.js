@@ -504,11 +504,16 @@ function hideConnectionGuide() {
 // ─── Camera Start / Stop ──────────────────────────────────────────────────────
 async function startSelected() {
   const idx = deviceSelect.value;
-  if (idx === '' || idx === null) { stopCamera(); return; }
+  if (idx === '' || idx === null) { await stopCamera(); return; }
   const opt = sourceOptions[Number(idx)];
   if (!opt) return;
 
-  stopCamera();
+  await stopCamera();
+  // Brief pause to let the phone release the camera before we re-acquire it
+  // with a new scrcpy process (e.g., on flip or resolution change). Without
+  // this, the old scrcpy may still hold the camera and the new one fails or
+  // hangs, crashing the preview.
+  await new Promise(r => setTimeout(r, 400));
   hideConnectionGuide();
 
   if (opt.kind === 'phone') {
@@ -697,13 +702,13 @@ function attachStream(name) {
   startFpsCounter();
 }
 
-function stopCamera() {
+async function stopCamera() {
   if (currentStream) {
     currentStream.getTracks().forEach(t => t.stop());
     currentStream = null;
   }
   if (activeScrcpyTitle && window.electronAPI) {
-    window.electronAPI.stopScrcpy(activeScrcpyTitle);
+    await window.electronAPI.stopScrcpy(activeScrcpyTitle);
     activeScrcpyTitle = null;
   }
   cameraVideo.srcObject = null;
@@ -1683,6 +1688,8 @@ function onSegmentationResults(results) {
   // 3. Draw new background behind the person.
   // The background must be drawn with the same canvas rotation as the video
   // so it aligns with the person after the CSS counter-rotation for display.
+  // The image is contain-fitted (entire image visible, centered, no cropping)
+  // and the background color fills any gaps so there are no transparent areas.
   vcamCtx.globalCompositeOperation = 'destination-over';
   const bgDeg = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
   vcamCtx.save();
@@ -1692,29 +1699,20 @@ function onSegmentationResults(results) {
     if (bgDeg === 90 || bgDeg === 270) {
       // Swap dimensions for 90/270 so the background covers the canvas
       vcamCtx.translate(-h / 2, -w / 2);
-      if (bgImageElement) {
-        drawCoverImage(vcamCtx, bgImageElement, h, w);
-      } else {
-        vcamCtx.fillStyle = bgColorValue;
-        vcamCtx.fillRect(0, 0, h, w);
-      }
+      vcamCtx.fillStyle = bgColorValue;
+      vcamCtx.fillRect(0, 0, h, w);
+      if (bgImageElement) drawContainImage(vcamCtx, bgImageElement, h, w);
     } else {
       // 180: same dimensions
       vcamCtx.translate(-w / 2, -h / 2);
-      if (bgImageElement) {
-        drawCoverImage(vcamCtx, bgImageElement, w, h);
-      } else {
-        vcamCtx.fillStyle = bgColorValue;
-        vcamCtx.fillRect(0, 0, w, h);
-      }
-    }
-  } else {
-    if (bgImageElement) {
-      drawCoverImage(vcamCtx, bgImageElement, w, h);
-    } else {
       vcamCtx.fillStyle = bgColorValue;
       vcamCtx.fillRect(0, 0, w, h);
+      if (bgImageElement) drawContainImage(vcamCtx, bgImageElement, w, h);
     }
+  } else {
+    vcamCtx.fillStyle = bgColorValue;
+    vcamCtx.fillRect(0, 0, w, h);
+    if (bgImageElement) drawContainImage(vcamCtx, bgImageElement, w, h);
   }
   vcamCtx.restore();
   vcamCtx.globalCompositeOperation = 'source-over';
@@ -1724,21 +1722,27 @@ function onSegmentationResults(results) {
   perfFrameCount++;
 }
 
-function drawCoverImage(ctx, img, w, h) {
+// Draw an image "contain"-fitted (entire image visible, centered, no cropping)
+// into a w×h region on the canvas.  Unlike cover-fit, nothing is cut off — the
+// image is scaled down so it fits entirely within the bounds, with any gap left
+// transparent so the background color (drawn separately) shows through.
+function drawContainImage(ctx, img, w, h) {
   const imgRatio = img.width / img.height;
   const canvasRatio = w / h;
   let drawW, drawH, offX, offY;
 
   if (imgRatio > canvasRatio) {
-    drawH = h;
-    drawW = h * imgRatio;
-    offX = (w - drawW) / 2;
-    offY = 0;
-  } else {
+    // Image is wider than canvas — fit width, center vertically
     drawW = w;
     drawH = w / imgRatio;
     offX = 0;
     offY = (h - drawH) / 2;
+  } else {
+    // Image is taller than canvas — fit height, center horizontally
+    drawH = h;
+    drawW = h * imgRatio;
+    offX = (w - drawW) / 2;
+    offY = 0;
   }
 
   ctx.drawImage(img, offX, offY, drawW, drawH);
