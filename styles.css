@@ -759,6 +759,48 @@ button:active {
   gap: 8px;
 }
 
+.gs-recent-images {
+  margin-top: 8px;
+}
+
+.gs-recent-images.hidden {
+  display: none;
+}
+
+.gs-recent-header {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.gs-recent-list {
+  display: flex;
+  gap: 6px;
+}
+
+.gs-recent-thumb {
+  flex: 1 1 0;
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  object-fit: cover;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.gs-recent-thumb:hover {
+  border-color: var(--accent, #4a9eff);
+  transform: scale(1.05);
+}
+
+.gs-recent-thumb.active {
+  border-color: var(--accent, #4a9eff);
+  border-width: 2px;
+}
+
 .settings-section-note {
   font-size: 12px !important;
   color: var(--text-muted) !important;
@@ -1046,30 +1088,6 @@ button:active {
   padding: 4px 12px;
   background: var(--accent2);
   border-color: var(--accent);
-}
-
-/* ---- CLEAN MODE (for output window / clean capture) ---- */
-body.clean-mode #topbar,
-body.clean-mode #controls-bar,
-body.clean-mode #status-bar,
-body.clean-mode #footer,
-body.clean-mode #greenscreen-badge {
-  display: none !important;
-}
-
-body.clean-mode #app {
-  height: 100vh;
-}
-
-body.clean-mode #video-wrap {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-}
-
-body.clean-mode #camera-video,
-body.clean-mode #vcam-canvas {
-  object-fit: contain;
 }
 
 /* ---- SETTINGS OVERLAY ---- */

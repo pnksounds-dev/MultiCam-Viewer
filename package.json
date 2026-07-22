@@ -38,8 +38,6 @@
       "launcher.vbs",
       "dev-launcher.vbs",
       "styles.css",
-      "output.html",
-      "output-renderer.js",
       "assets/**/*",
       "vendor/**/*",
       "vcam-native/**/*",

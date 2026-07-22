@@ -33,7 +33,6 @@ const btnNewWindowMenu   = document.getElementById('btn-new-window-menu');
 const newCameraDropdown  = document.getElementById('new-camera-dropdown');
 const btnNewSameWindow   = document.getElementById('btn-new-same-window');
 const btnNewSeparate     = document.getElementById('btn-new-separate');
-const btnOutputWindow    = document.getElementById('btn-output-window');
 const btnRotate          = document.getElementById('btn-rotate');
 const btnFlipCamera      = document.getElementById('btn-flip-camera');
 const btnRefresh         = document.getElementById('btn-refresh');
@@ -92,6 +91,8 @@ const bgColorInput       = document.getElementById('bg-color');
 const bgImageInput       = document.getElementById('bg-image');
 const btnClearBg         = document.getElementById('btn-clear-bg');
 const greenscreenBadge   = document.getElementById('greenscreen-badge');
+const gsRecentImages     = document.getElementById('gs-recent-images');
+const gsRecentList       = document.getElementById('gs-recent-list');
 const stExposure         = document.getElementById('settings-exposure');
 const stExposureVal      = document.getElementById('settings-exposure-val');
 const stContrast         = document.getElementById('settings-contrast');
@@ -113,10 +114,14 @@ let fpsInterval      = null;
 let lastFpsTime      = Date.now();
 let frameHandle      = null;    // id from requestVideoFrameCallback or requestAnimationFrame
 let vcamCtx          = null;
-let cameraRotation   = 180;      // 0, 90, 180, 270 — applied to main video + vcam output
-                                    // Default 180°: phone camera sensor orientation makes the
-                                    // raw vcam output upside-down relative to the browser's
-                                    // <video> view. Rotating both by 180° aligns them.
+let cameraRotation   = 0;        // user-facing rotation (rotate button cycles 0→90→180→270)
+// The browser's <video> element applies the stream's orientation metadata
+// automatically, so it displays correctly. But canvas.drawImage() does NOT
+// apply that metadata — it draws raw sensor pixels, which for phone cameras
+// are upside-down relative to the <video> view. This offset is added to
+// cameraRotation only for the canvas draw path so the vcam/output matches the
+// <video> preview without flipping the preview itself.
+const CANVAS_ROTATION_OFFSET = 180;
 
 // ─── Phase 1 frame-pipeline instrumentation ───────────────────────────────────
 // Prefer requestVideoFrameCallback so we only do a GPU readback + IPC send when
@@ -191,12 +196,13 @@ let bgImageElement     = null;
 let selfieSegmentation = null;
 let segmentationReady  = false;
 let isSegmenting       = false;
+let recentBgImages     = [];  // array of { path, name, thumbDataUrl } — max 5
+let activeRecentIdx    = -1;  // index in recentBgImages currently loaded, or -1
 let gsExposureValue    = 0;
 let gsContrastValue    = 0;
 let gsSaturationValue  = 0;
-let outputWindow       = null;
 
-// ─── Video adjustment API (used by the output window) ──────────────────────────
+// ─── Video adjustment API ─────────────────────────────────────────────────────
 function setVideoAdjustment(name, value) {
   const val = parseInt(value, 10);
   if (name === 'exposure') gsExposureValue = val;
@@ -206,15 +212,6 @@ function setVideoAdjustment(name, value) {
   syncSlider(stExposure, stExposureVal, gsExposureValue);
   syncSlider(stContrast, stContrastVal, gsContrastValue);
   syncSlider(stSaturation, stSaturationVal, gsSaturationValue);
-  // Keep the output window menu in sync
-  if (outputWindow && !outputWindow.closed) {
-    try {
-      const doc = outputWindow.document;
-      syncSlider(doc.getElementById('out-exposure'), doc.getElementById('out-exposure-val'), gsExposureValue);
-      syncSlider(doc.getElementById('out-contrast'), doc.getElementById('out-contrast-val'), gsContrastValue);
-      syncSlider(doc.getElementById('out-saturation'), doc.getElementById('out-saturation-val'), gsSaturationValue);
-    } catch {}
-  }
 }
 window.getVideoAdjustment = (name) => {
   if (name === 'exposure') return gsExposureValue;
@@ -236,6 +233,9 @@ function applySettings(settings) {
   if (settings.bgColor) {
     bgColorValue = settings.bgColor;
     bgColorInput.value = settings.bgColor;
+  }
+  if (settings.recentBgImagePaths) {
+    initRecentBgImages(settings.recentBgImagePaths);
   }
   if (typeof settings.exposure === 'number') setVideoAdjustment('exposure', settings.exposure);
   if (typeof settings.contrast === 'number') setVideoAdjustment('contrast', settings.contrast);
@@ -646,22 +646,46 @@ function applyVideoRotation() {
   const deg = cameraRotation;
   if (deg === 0) {
     cameraVideo.style.transform = '';
+  } else if (deg === 180) {
+    cameraVideo.style.transform = 'rotate(180deg)';
+  } else {
+    // 90/270: compute scale so the rotated video fills the container
+    const container = cameraVideo.parentElement;
+    const cw = container ? container.clientWidth  : 0;
+    const ch = container ? container.clientHeight : 0;
+    const vw = cameraVideo.videoWidth  || cw || 1;
+    const vh = cameraVideo.videoHeight || ch || 1;
+    const scale = (cw && ch) ? Math.max(cw / vh, ch / vw) : 1;
+    cameraVideo.style.transform = `rotate(${deg}deg) scale(${scale.toFixed(3)})`;
+  }
+  // The vcam canvas pixels include CANVAS_ROTATION_OFFSET (for correct output),
+  // but when displayed as the greenscreen preview the canvas needs a CSS
+  // counter-rotation so the preview matches the <video> element's orientation.
+  // captureStream()/getImageData() read raw pixels, so the output is unaffected.
+  applyCanvasCounterRotation();
+}
+
+// Apply a CSS counter-rotation to vcamCanvas so its display matches cameraVideo.
+// The canvas pixels are rotated by (cameraRotation + OFFSET) for correct output;
+// the CSS removes the OFFSET portion for display only.
+function applyCanvasCounterRotation() {
+  const deg = (CANVAS_ROTATION_OFFSET) % 360;
+  if (deg === 0) {
+    vcamCanvas.style.transform = '';
     return;
   }
   if (deg === 180) {
-    cameraVideo.style.transform = 'rotate(180deg)';
+    vcamCanvas.style.transform = 'rotate(180deg)';
     return;
   }
-  // 90/270: compute scale so the rotated video fills the container
-  const container = cameraVideo.parentElement;
+  // 90/270: compute scale so the rotated canvas fills the container
+  const container = vcamCanvas.parentElement;
   const cw = container ? container.clientWidth  : 0;
   const ch = container ? container.clientHeight : 0;
-  const vw = cameraVideo.videoWidth  || cw || 1;
-  const vh = cameraVideo.videoHeight || ch || 1;
-  // After 90/270 rotation, video width↔height swap relative to container.
-  // Scale to cover: max(containerW / videoH, containerH / videoW)
+  const vw = vcamCanvas.width  || cw || 1;
+  const vh = vcamCanvas.height || ch || 1;
   const scale = (cw && ch) ? Math.max(cw / vh, ch / vw) : 1;
-  cameraVideo.style.transform = `rotate(${deg}deg) scale(${scale.toFixed(3)})`;
+  vcamCanvas.style.transform = `rotate(${deg}deg) scale(${scale.toFixed(3)})`;
 }
 
 // ── Common: attach a stream to the preview + start outputs ──
@@ -698,6 +722,7 @@ function stopCamera() {
   cameraVideo.srcObject = null;
   cameraVideo.classList.remove('active');
   cameraVideo.style.transform = '';
+  vcamCanvas.style.transform = '';
   noCameraMsg.style.display = 'flex';
   stopFpsCounter();
   stopVcamOutput();
@@ -1345,9 +1370,11 @@ async function startVcamOutput() {
   const s = currentStream.getVideoTracks()[0].getSettings();
   const vw = cameraVideo.videoWidth  || s.width  || 1280;
   const vh = cameraVideo.videoHeight || s.height || 720;
-  // For 90°/270° rotations, the output canvas dimensions are swapped so the
-  // rotated frame fills the canvas without cropping.
-  const rotated = (cameraRotation === 90 || cameraRotation === 270);
+  // For 90°/270° effective canvas rotations, the output canvas dimensions are
+  // swapped so the rotated frame fills the canvas without cropping. Uses the
+  // effective rotation (cameraRotation + offset) since that's what drawVideoRotated applies.
+  const effRot = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
+  const rotated = (effRot === 90 || effRot === 270);
   const w = rotated ? vh : vw;
   const h = rotated ? vw : vh;
 
@@ -1358,10 +1385,11 @@ async function startVcamOutput() {
   // compositor when greenscreen is active — startFrameLoop will acquire a 2D
   // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
   // in which case we fall back to the 2D canvas path.
-  // Also bypass the GL compositor when rotation is active — the 2D path handles
-  // rotation via drawVideoRotated(); adding rotation to the shader is not worth
-  // the complexity for a user-applied effect.
-  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled && cameraRotation === 0) {
+  // Also bypass the GL compositor when the effective canvas rotation is non-zero
+  // — the 2D path handles rotation via drawVideoRotated(); adding rotation to
+  // the shader is not worth the complexity for a user-applied effect.
+  const effRotZero = ((cameraRotation + CANVAS_ROTATION_OFFSET) % 360) === 0;
+  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled && effRotZero) {
     glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
   } else {
     glCompositor = null;
@@ -1553,11 +1581,13 @@ function sendFrameToVcam(width, height) {
     .finally(() => { vcamFrameInFlight = false; });
 }
 
-// Draw a video element to a 2D canvas context with the current cameraRotation.
+// Draw a video element to a 2D canvas context with the effective canvas
+// rotation (cameraRotation + CANVAS_ROTATION_OFFSET). The offset corrects for
+// the phone sensor orientation that the <video> element handles automatically
+// but canvas.drawImage does not.
 // w/h are the canvas dimensions (already swapped for 90/270 in startVcamOutput).
-// The video is drawn at its natural size then rotated around the canvas center.
 function drawVideoRotated(ctx, video, w, h) {
-  const deg = cameraRotation;
+  const deg = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
   if (deg === 0) {
     ctx.drawImage(video, 0, 0, w, h);
     return;
@@ -1664,14 +1694,43 @@ function onSegmentationResults(results) {
   vcamCtx.globalCompositeOperation = 'destination-in';
   drawVideoRotated(vcamCtx, results.segmentationMask, w, h);
 
-  // 3. Draw new background behind the person
+  // 3. Draw new background behind the person.
+  // The background must be drawn with the same canvas rotation as the video
+  // so it aligns with the person after the CSS counter-rotation for display.
   vcamCtx.globalCompositeOperation = 'destination-over';
-  if (bgImageElement) {
-    drawCoverImage(vcamCtx, bgImageElement, w, h);
+  const bgDeg = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
+  vcamCtx.save();
+  if (bgDeg !== 0) {
+    vcamCtx.translate(w / 2, h / 2);
+    vcamCtx.rotate(bgDeg * Math.PI / 180);
+    if (bgDeg === 90 || bgDeg === 270) {
+      // Swap dimensions for 90/270 so the background covers the canvas
+      vcamCtx.translate(-h / 2, -w / 2);
+      if (bgImageElement) {
+        drawCoverImage(vcamCtx, bgImageElement, h, w);
+      } else {
+        vcamCtx.fillStyle = bgColorValue;
+        vcamCtx.fillRect(0, 0, h, w);
+      }
+    } else {
+      // 180: same dimensions
+      vcamCtx.translate(-w / 2, -h / 2);
+      if (bgImageElement) {
+        drawCoverImage(vcamCtx, bgImageElement, w, h);
+      } else {
+        vcamCtx.fillStyle = bgColorValue;
+        vcamCtx.fillRect(0, 0, w, h);
+      }
+    }
   } else {
-    vcamCtx.fillStyle = bgColorValue;
-    vcamCtx.fillRect(0, 0, w, h);
+    if (bgImageElement) {
+      drawCoverImage(vcamCtx, bgImageElement, w, h);
+    } else {
+      vcamCtx.fillStyle = bgColorValue;
+      vcamCtx.fillRect(0, 0, w, h);
+    }
   }
+  vcamCtx.restore();
   vcamCtx.globalCompositeOperation = 'source-over';
 
   // 4. Send composited frame to the virtual camera
@@ -1901,24 +1960,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-btnOutputWindow.addEventListener('click', () => {
-  if (outputWindow && !outputWindow.closed) {
-    outputWindow.focus();
-    return;
-  }
-  // Open the output as a same-origin popup so it can share the processed canvas stream
-  document.body.classList.add('clean-mode');
-  outputWindow = window.open('output.html', 'multicam-output', 'frame=0,width=960,height=540,resizable=1');
-
-  // Watch for the popup closing so we can restore the main window UI
-  const checkClosed = setInterval(() => {
-    if (!outputWindow || outputWindow.closed) {
-      clearInterval(checkClosed);
-      document.body.classList.remove('clean-mode');
-      outputWindow = null;
-    }
-  }, 300);
-});
 btnRefresh.addEventListener('click', refreshSources);
 btnSettings.addEventListener('click', openSettings);
 btnCloseSettings.addEventListener('click', closeSettings);
@@ -2123,9 +2164,23 @@ bgImageInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const img = new Image();
-  img.onload = () => {
+  img.onload = async () => {
     bgImageElement = img;
     URL.revokeObjectURL(img.src);
+    // Read the file as a data URL so we can save it via IPC (file.path is not
+    // available under context isolation in Electron 33).
+    if (window.electronAPI?.saveImageFile) {
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        const result = await window.electronAPI.saveImageFile(dataUrl, file.name || 'bg');
+        if (result.ok) {
+          const thumb = makeThumbnail(img, 48);
+          addToRecentBgImages(result.path, file.name || 'background', thumb);
+        }
+      } catch (err) {
+        console.error('Failed to save background image:', err);
+      }
+    }
   };
   img.onerror = () => {
     bgImageElement = null;
@@ -2133,10 +2188,120 @@ bgImageInput.addEventListener('change', (e) => {
   img.src = URL.createObjectURL(file);
 });
 
+// Read a File as a data URL (Promise wrapper for FileReader).
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 btnClearBg.addEventListener('click', () => {
   bgImageElement = null;
   bgImageInput.value = '';
+  activeRecentIdx = -1;
+  renderRecentBgImages();
 });
+
+// Generate a small thumbnail data URL from an Image element.
+function makeThumbnail(img, size) {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  // Cover-fit the image into the square thumbnail
+  const scale = Math.max(size / img.width, size / img.height);
+  const dw = img.width * scale, dh = img.height * scale;
+  ctx.drawImage(img, (size - dw) / 2, (size - dh) / 2, dw, dh);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+
+// Add an image to the recent list (dedup by path, move to front, cap at 5).
+function addToRecentBgImages(filePath, name, thumbDataUrl) {
+  // Remove existing entry with the same path
+  recentBgImages = recentBgImages.filter(r => r.path !== filePath);
+  // Prepend the new entry
+  recentBgImages.unshift({ path: filePath, name, thumbDataUrl });
+  // Cap at 5
+  if (recentBgImages.length > 5) recentBgImages = recentBgImages.slice(0, 5);
+  // Persist paths to settings (thumbnails are in memory only)
+  saveSettingsDebounced({ recentBgImagePaths: recentBgImages.map(r => r.path) });
+  // Mark the just-added image as active
+  activeRecentIdx = 0;
+  renderRecentBgImages();
+}
+
+// Render the recent images thumbnails in the GS popover.
+function renderRecentBgImages() {
+  if (!gsRecentList || !gsRecentImages) return;
+  gsRecentList.innerHTML = '';
+  if (recentBgImages.length === 0) {
+    gsRecentImages.classList.add('hidden');
+    return;
+  }
+  gsRecentImages.classList.remove('hidden');
+  recentBgImages.forEach((r, i) => {
+    const thumb = document.createElement('img');
+    thumb.src = r.thumbDataUrl;
+    thumb.className = 'gs-recent-thumb' + (i === activeRecentIdx ? ' active' : '');
+    thumb.title = r.name;
+    thumb.addEventListener('click', () => loadRecentBgImage(i));
+    gsRecentList.appendChild(thumb);
+  });
+}
+
+// Load a recent background image by index. Reads the file via IPC and sets it
+// as the current background.
+async function loadRecentBgImage(idx) {
+  const r = recentBgImages[idx];
+  if (!r || !window.electronAPI?.readImageFile) return;
+  activeRecentIdx = idx;
+  renderRecentBgImages();
+  try {
+    const result = await window.electronAPI.readImageFile(r.path);
+    if (!result.ok) {
+      // File may have been deleted/moved — remove from recent list
+      recentBgImages.splice(idx, 1);
+      activeRecentIdx = -1;
+      saveSettingsDebounced({ recentBgImagePaths: recentBgImages.map(x => x.path) });
+      renderRecentBgImages();
+      return;
+    }
+    const img = new Image();
+    img.onload = () => { bgImageElement = img; };
+    img.src = result.dataUrl;
+  } catch {
+    bgImageElement = null;
+  }
+}
+
+// Load recent image paths from settings on startup and generate thumbnails
+// lazily by reading each file.
+async function initRecentBgImages(paths) {
+  if (!paths || !Array.isArray(paths) || !paths.length) return;
+  if (!window.electronAPI?.readImageFile) return;
+  recentBgImages = [];
+  for (const p of paths.slice(0, 5)) {
+    try {
+      const result = await window.electronAPI.readImageFile(p);
+      if (result.ok) {
+        const img = new Image();
+        await new Promise((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          img.src = result.dataUrl;
+        });
+        if (img.width > 0) {
+          const thumb = makeThumbnail(img, 48);
+          const name = p.split(/[\\/]/).pop() || p;
+          recentBgImages.push({ path: p, name, thumbDataUrl: thumb });
+        }
+      }
+    } catch {}
+  }
+  renderRecentBgImages();
+}
 
 function syncSlider(input, valueEl, value) {
   if (input) input.value = value;

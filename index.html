@@ -80,10 +80,6 @@
         <button id="btn-flip-camera" class="toolbar-btn icon-only" title="Flip between front and back camera (F)" disabled>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V7a2 2 0 0 0-2-2h-2"/><path d="M3 9V7a2 2 0 0 1 2-2h2"/><path d="M21 15v2a2 2 0 0 1-2 2h-2"/><path d="M3 15v2a2 2 0 0 0 2 2h2"/><rect x="7" y="9" width="10" height="6" rx="1"/></svg>
         </button>
-        <button id="btn-output-window" class="toolbar-btn" title="Open a clean output window for OBS window capture">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          <span>Output</span>
-        </button>
 
         <div id="greenscreen-wrap" class="premium-gated toolbar-gs">
           <div class="gs-btn-group">
@@ -105,6 +101,10 @@
                 Image
               </label>
               <button id="btn-clear-bg" class="toolbar-btn icon-only" title="Clear background image">&#10005;</button>
+            </div>
+            <div id="gs-recent-images" class="gs-recent-images hidden">
+              <div class="gs-recent-header">Recent</div>
+              <div id="gs-recent-list" class="gs-recent-list"></div>
             </div>
           </div>
         </div>

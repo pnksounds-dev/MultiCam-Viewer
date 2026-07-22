@@ -24,8 +24,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ── Windows / dialogs ──
   openNewWindow:  () => ipcRenderer.invoke('open-new-window'),
-  closeOutputWindow: () => ipcRenderer.invoke('output:close'),
-  moveOutputWindow: (dx, dy) => ipcRenderer.invoke('output:move', { dx, dy }),
   showDialog:     (opts) => ipcRenderer.invoke('show-dialog', opts),
   openExternal:   (url) => ipcRenderer.invoke('open-external', url),
 
@@ -49,6 +47,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Settings ──
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+
+  // ── Image file reading (for greenscreen recent images) ──
+  readImageFile: (filePath) => ipcRenderer.invoke('image:read', filePath),
+  saveImageFile: (dataUrl, originalName) => ipcRenderer.invoke('image:save', dataUrl, originalName),
 
   // ── Forum account (login runs in main process, JWT stored via safeStorage) ──
   forumLogin:       (email, password) => ipcRenderer.invoke('forum:login', { email, password }),

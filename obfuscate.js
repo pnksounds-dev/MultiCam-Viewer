@@ -6,7 +6,6 @@ const JavaScriptObfuscator = require('javascript-obfuscator');
 
 const FILES = [
   'renderer.js',
-  'output-renderer.js',
 ];
 
 const OPTIONS = {

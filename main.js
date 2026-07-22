@@ -694,32 +694,11 @@ function createWindow(show = true) {
     });
   }
 
-  // Make the output window (opened via window.open from the renderer) borderless
-  // so the whole body can be used to drag it. Only allow opening the local
-  // output.html — deny any other URL.
-  win.webContents.setWindowOpenHandler(({ url, features }) => {
-    let isOutput = false;
-    try {
-      isOutput = url.startsWith('file://') && /\/output\.html(?:[?#]|$)/.test(url);
-    } catch { isOutput = false; }
-    if (!isOutput) return { action: 'deny' };
-
-    const parsed = new URLSearchParams((features || '').replace(/,/g, '&'));
-    const width = parseInt(parsed.get('width'), 10) || 960;
-    const height = parseInt(parsed.get('height'), 10) || 540;
-    return {
-      action: 'allow',
-      overrideBrowserWindowOptions: {
-        frame: false,
-        resizable: true,
-        minimizable: false,
-        maximizable: false,
-        autoHideMenuBar: true,
-        width,
-        height,
-        backgroundColor: '#000000',
-      },
-    };
+  // Deny all window.open calls — the output window feature has been removed
+  // (the virtual camera driver now handles OBS integration directly).
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    logToFile('Blocked window.open: ' + url);
+    return { action: 'deny' };
   });
 
   // Offset additional windows from the center so they don't fully overlap.
@@ -892,25 +871,6 @@ ipcMain.handle('open-external', async (e, url) => {
   return { ok: true };
 });
 
-ipcMain.handle('output:close', async (e) => {
-  const win = BrowserWindow.fromWebContents(e.sender);
-  if (win && !win.isDestroyed()) win.close();
-  return { ok: true };
-});
-
-ipcMain.handle('output:move', async (e, payload) => {
-  const win = BrowserWindow.fromWebContents(e.sender);
-  if (win && !win.isDestroyed()) {
-    // Clamp per-move deltas to a sane range so a runaway renderer can't fling
-    // the window arbitrarily far in a single call.
-    const dx = clampInt(payload && payload.dx, -4000, 4000, 0);
-    const dy = clampInt(payload && payload.dy, -4000, 4000, 0);
-    const b = win.getBounds();
-    win.setBounds({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
-  }
-  return { ok: true };
-});
-
 ipcMain.handle('settings:get', async () => appSettings);
 ipcMain.handle('settings:set', async (e, patch) => {
   if (patch && typeof patch === 'object') {
@@ -918,6 +878,61 @@ ipcMain.handle('settings:set', async (e, patch) => {
     saveSettings(appSettings);
   }
   return appSettings;
+});
+
+// Read an image file and return a base64 data URL. Used by the greenscreen
+// recent-images list to reload a previously selected background image.
+ipcMain.handle('image:read', async (e, filePath) => {
+  if (typeof filePath !== 'string' || !filePath) {
+    return { ok: false, error: 'Invalid file path' };
+  }
+  try {
+    const data = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = ext === '.png' ? 'image/png'
+      : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+      : ext === '.gif' ? 'image/gif'
+      : ext === '.webp' ? 'image/webp'
+      : ext === '.bmp' ? 'image/bmp'
+      : 'image/png';
+    return { ok: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Failed to read image file' };
+  }
+});
+
+// Save a background image (as data URL) to the userData directory and return
+// the saved file path. Used by the greenscreen recent-images feature so that
+// image paths persist across restarts. The renderer can't access file.path
+// on File objects due to context isolation, so we save the image content here.
+ipcMain.handle('image:save', async (e, dataUrl, originalName) => {
+  try {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+      return { ok: false, error: 'Invalid data URL' };
+    }
+    // Parse the data URL: data:<mime>;base64,<data>
+    const m = dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/i);
+    if (!m) return { ok: false, error: 'Unsupported image format' };
+    const mime = m[1];
+    const buf = Buffer.from(m[2], 'base64');
+    const ext = mime === 'image/png' ? '.png'
+      : mime === 'image/jpeg' ? '.jpg'
+      : mime === 'image/gif' ? '.gif'
+      : mime === 'image/webp' ? '.webp'
+      : mime === 'image/bmp' ? '.bmp'
+      : '.png';
+    const dir = path.join(app.getPath('userData'), 'bg-images');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const base = (typeof originalName === 'string' && originalName)
+      ? path.parse(originalName).name.replace(/[^a-z0-9_-]/gi, '_').slice(0, 40)
+      : 'bg';
+    const stamp = Date.now();
+    const filePath = path.join(dir, `${base}-${stamp}${ext}`);
+    fs.writeFileSync(filePath, buf);
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Failed to save image' };
+  }
 });
 
 // ─── Forum account IPC (login runs in main process) ─────────────────────────
