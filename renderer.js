@@ -45,6 +45,12 @@ const helpContent        = document.getElementById('help-content');
 const btnViewChangelog   = document.getElementById('btn-view-changelog');
 const changelogOverlay   = document.getElementById('changelog-overlay');
 const btnCloseChangelog  = document.getElementById('btn-close-changelog');
+const hotkeysOverlay     = document.getElementById('hotkeys-overlay');
+const btnCloseHotkeys    = document.getElementById('btn-close-hotkeys');
+const btnViewHotkeys     = document.getElementById('btn-view-hotkeys');
+const hotkeysTbody       = document.getElementById('hotkeys-tbody');
+const keybindCustomizeList = document.getElementById('keybind-customize-list');
+const btnResetKeybinds   = document.getElementById('btn-reset-keybinds');
 const btnMinimize        = document.getElementById('btn-minimize');
 const btnMaximize        = document.getElementById('btn-maximize');
 const maximizeIcon       = document.getElementById('maximize-icon');
@@ -248,6 +254,15 @@ function applySettings(settings) {
     document.documentElement.setAttribute('data-theme', settings.theme);
     updateHeaderLogoForTheme(settings.theme);
   }
+  // Merge saved hotkey bindings with defaults (so new actions in future
+  // versions get their defaults without overwriting user customizations).
+  if (settings.hotkeys && typeof settings.hotkeys === 'object') {
+    activeHotkeys = { ...DEFAULT_HOTKEYS, ...settings.hotkeys };
+  } else {
+    // First launch — persist the defaults so customization is ready later
+    activeHotkeys = { ...DEFAULT_HOTKEYS };
+    saveSettingsDebounced({ hotkeys: activeHotkeys });
+  }
 }
 
 // Swap the header wordmark logo for a light-mode variant when the light theme
@@ -422,7 +437,10 @@ async function _refreshSourcesInner() {
     }
   }
 
-  // For each phone, list its cameras
+  // For each phone, list its cameras.  Only ONE dropdown entry is created per
+  // phone ("Phone Camera"); front/back switching is handled by the flip button
+  // in the toolbar (and its 'F' hotkey), which cycles the active camera within
+  // the phone's `cameras` array rather than picking a separate list entry.
   for (const ph of phones) {
     let cams = [];
     const cr = await window.electronAPI.listPhoneCameras(ph.serial);
@@ -430,48 +448,15 @@ async function _refreshSourcesInner() {
     // Fallback if camera listing failed: assume one back camera
     if (!cams.length) cams = [{ id: '0', facing: 'back', maxRes: '' }];
 
-    for (const cam of cams) {
-      sourceOptions.push({
-        kind: 'phone',
-        serial: ph.serial,
-        model: ph.model,
-        cameraId: cam.id,
-        facing: cam.facing,
-        maxRes: cam.maxRes,
-        label: `${ph.model} — ${cam.facing} camera`,
-      });
-    }
+    sourceOptions.push({
+      kind: 'phone',
+      serial: ph.serial,
+      model: ph.model,
+      cameras: cams,          // [{ id, facing, maxRes }, ...]
+      currentCamIndex: 0,     // which entry in `cameras` is active
+      label: ph.model || ph.serial || 'Phone Camera',
+    });
   }
-
-  // 2) Real UVC cameras (includes Android 14+ native USB webcam mode)
-  // The getUserMedia probe is needed ONCE to unlock device labels (Chrome only
-  // populates labels after a permission grant).  After the first success we
-  // skip the probe and rely on enumerateDevices alone — this avoids opening the
-  // default camera on every refresh, which can deadlock the media pipeline when
-  // another window is already using that camera.
-  try {
-    if (!deviceLabelsObtained && !currentStream && secondaryPanes.every(p => !p.stream)) {
-      // First-time probe (no active streams anywhere) — race with a 3s timeout
-      // so a hung driver doesn't block refreshSources forever.
-      const probe = await Promise.race([
-        navigator.mediaDevices.getUserMedia({ video: true }).catch(() => null),
-        new Promise(r => setTimeout(() => r(null), 3000)),
-      ]);
-      if (probe) {
-        probe.getTracks().forEach(t => t.stop());
-        deviceLabelsObtained = true;
-      }
-    }
-    const devs = await navigator.mediaDevices.enumerateDevices();
-    devs.filter(d => d.kind === 'videoinput' && !isVirtualOutputOnly(d.label))
-        .forEach(d => {
-          sourceOptions.push({
-            kind: 'uvc',
-            deviceId: d.deviceId,
-            label: '­ƒÄÑ ' + (d.label || 'USB Camera'),
-          });
-        });
-  } catch { /* camera privacy may block this; phones still work */ }
 
   // Rebuild main camera dropdown
   const prevValue = deviceSelect.value;
@@ -495,14 +480,12 @@ async function _refreshSourcesInner() {
       statusText.textContent = adbIssues[0].message;
       showConnectionGuide();
     } else {
-      statusText.textContent = 'No phones or cameras found — see guide below';
+      statusText.textContent = 'No phone found — see guide below';
       showConnectionGuide();
     }
   } else {
-    const nPhones = sourceOptions.filter(s => s.kind === 'phone').length;
-    const countMsg = nPhones
-      ? `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`
-      : `${sourceOptions.length} camera${sourceOptions.length > 1 ? 's' : ''} detected`;
+    const nPhones = sourceOptions.length;
+    const countMsg = `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`;
     statusText.textContent = adbIssues.length
       ? `${countMsg} · ${adbIssues[0].message}`
       : countMsg;
@@ -537,17 +520,21 @@ async function startSelected() {
 }
 
 // ── Phone camera via scrcpy + desktop capture ──
+// `opt` is a one-per-phone entry; the active front/back camera is resolved from
+// `opt.cameras[opt.currentCamIndex]`.  The flip button mutates currentCamIndex
+// and re-enters here to restart scrcpy with the other camera.
 async function startPhoneCamera(opt) {
+  const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
   const resolution = resSelect.value || '1280x720';
-  const windowTitle = `MultiCamCap_${processPid}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
+  const windowTitle = `MultiCamCap_${processPid}_${opt.serial}_${cam.id}_${vcamSlot}`;
   activeScrcpyTitle = windowTitle;
   lastScrcpyError = '';
 
-  statusText.textContent = `[1/3] Launching scrcpy for ${opt.model || opt.serial} (${opt.facing})…`;
+  statusText.textContent = `[1/3] Launching scrcpy for ${opt.model || opt.serial} (${cam.facing})…`;
 
   const start = await window.electronAPI.startScrcpy({
     serial: opt.serial,
-    cameraId: opt.cameraId,
+    cameraId: cam.id,
     resolution,
     fps: 30,
     windowTitle,
@@ -592,7 +579,7 @@ async function startPhoneCamera(opt) {
           },
         },
       });
-      attachStream(`${opt.model || opt.serial} · ${opt.facing}`);
+      attachStream(`${opt.model || opt.serial} · ${cam.facing}`);
       return;
     } catch (err) {
       if (attempt === 2) {
@@ -732,7 +719,7 @@ function stopCamera() {
 
 // Enable/disable the rotate and flip buttons based on the active camera.
 // Rotate is enabled for any active camera. Flip is enabled only for phone
-// cameras that have a front/back counterpart in the source list.
+// cameras that expose more than one camera (front + back) in their `cameras` array.
 function updateCameraControlButtons(opt) {
   if (!opt) {
     btnRotate.disabled = true;
@@ -744,11 +731,7 @@ function updateCameraControlButtons(opt) {
     btnFlipCamera.disabled = true;
     return;
   }
-  const targetFacing = opt.facing === 'back' ? 'front' : 'back';
-  const hasOther = sourceOptions.some(
-    o => o.kind === 'phone' && o.serial === opt.serial && o.facing === targetFacing
-  );
-  btnFlipCamera.disabled = !hasOther;
+  btnFlipCamera.disabled = opt.cameras.length < 2;
 }
 
 // ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
@@ -840,13 +823,14 @@ function startSecondaryPaneCamera(id) {
 }
 
 async function startSecondaryPhoneCamera(pane, opt) {
+  const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
   const resolution = resSelect.value || '1280x720';
-  const windowTitle = `MultiCamCap${processPid}_${pane.id}_${opt.serial}_${opt.cameraId}_${vcamSlot}`;
+  const windowTitle = `MultiCamCap${processPid}_${pane.id}_${opt.serial}_${cam.id}_${vcamSlot}`;
   pane.scrcpyTitle = windowTitle;
 
   const start = await window.electronAPI.startScrcpy({
     serial: opt.serial,
-    cameraId: opt.cameraId,
+    cameraId: cam.id,
     resolution,
     fps: 30,
     windowTitle,
@@ -1540,11 +1524,13 @@ function startSettingsPreview() {
 
 function openSettings() {
   settingsOverlay.classList.remove('hidden');
+  populateKeybindCustomizeList();
   startSettingsPreview();
 }
 
 function closeSettings() {
   settingsOverlay.classList.add('hidden');
+  if (capturingAction) cancelKeybindCapture();
   stopSettingsPreview();
 }
 
@@ -1927,36 +1913,205 @@ btnRotate.addEventListener('click', () => {
 });
 
 // Flip button: swaps between front and back camera for the active phone.
-// Finds the other camera entry in sourceOptions with the same serial but
-// different facing, selects it in the dropdown, and restarts the camera.
+// Each phone is a single dropdown entry holding a `cameras` array; flip cycles
+// `currentCamIndex` within that entry and restarts scrcpy with the other camera.
 btnFlipCamera.addEventListener('click', async () => {
   if (btnFlipCamera.disabled) return;
   const idx = deviceSelect.value;
   if (idx === '' || idx === null) return;
   const opt = sourceOptions[Number(idx)];
-  if (!opt || opt.kind !== 'phone') return;
+  if (!opt || opt.kind !== 'phone' || opt.cameras.length < 2) return;
 
-  // Find the other camera for the same phone (same serial, different facing)
-  const targetFacing = opt.facing === 'back' ? 'front' : 'back';
-  const otherIdx = sourceOptions.findIndex(
-    o => o.kind === 'phone' && o.serial === opt.serial && o.facing === targetFacing
-  );
-  if (otherIdx < 0) return;
-
-  // Select the other camera in the dropdown and start it
-  deviceSelect.value = String(otherIdx);
+  // Cycle to the next camera in the phone's camera list (front ↔ back)
+  opt.currentCamIndex = (opt.currentCamIndex + 1) % opt.cameras.length;
   await startSelected();
 });
 
-// Keyboard shortcuts: R = rotate, F = flip (only when not typing in a field)
+// ─── Keyboard shortcuts / hotkeys ────────────────────────────────────────────
+// Default hotkey bindings. Persisted to settings on first launch (Phase 4) so
+// future customization only needs a UI. The dispatch table maps a normalized
+// key string to an action function.
+const DEFAULT_HOTKEYS = {
+  rotate:         'r',
+  flipCamera:     'f',
+  greenscreen:    'g',
+  settings:       's',
+  newCamera:      'n',
+  closeCamera:    'c',
+  nextResolution: '+',
+  prevResolution: '-',
+  showHotkeys:    '?',
+  newWindow:      'Ctrl+Shift+N',
+};
+let activeHotkeys = { ...DEFAULT_HOTKEYS };
+
+// Normalize a KeyboardEvent into a key string matching the hotkeys table.
+// Examples: 'r', 'F5', '?', 'Ctrl+Shift+N'. Key is lowercased for single
+// letters; modifier names are sorted Ctrl, Shift, Alt for stable lookup.
+function normalizeKey(e) {
+  const key = e.key;
+  // Function keys and special chars stay as-is
+  if (key === 'F5' || key === '?' || key === '+' || key === '-' || key === '=' || key === '_') {
+    // Modifier-based combos need the full string
+  } else if (key.length === 1) {
+    // Single char — lowercase for letter keys
+  }
+  const parts = [];
+  if (e.ctrlKey)  parts.push('Ctrl');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey)   parts.push('Alt');
+  // For single-char keys with no modifiers, use lowercase
+  if (parts.length === 0 && key.length === 1) {
+    return key.toLowerCase();
+  }
+  parts.push(key.length === 1 ? key.toUpperCase() : key);
+  return parts.join('+');
+}
+
+// Build an inverted lookup: key string → action name
+function buildHotkeyLookup(hotkeys) {
+  const lookup = {};
+  for (const [action, key] of Object.entries(hotkeys)) {
+    lookup[key.toLowerCase()] = action;
+  }
+  return lookup;
+}
+
+// Hotkey action functions. Each checks its own preconditions (e.g., button
+// disabled state) and is a no-op if the action can't run.
+function actionRotate() {
+  if (!btnRotate || btnRotate.disabled) return;
+  btnRotate.click();
+}
+
+function actionFlipCamera() {
+  if (!btnFlipCamera || btnFlipCamera.disabled) return;
+  btnFlipCamera.click();
+}
+
+function actionToggleGreenscreen() {
+  if (!btnGreenscreen) return;
+  btnGreenscreen.click();
+}
+
+function actionToggleSettings() {
+  if (!settingsOverlay) return;
+  if (settingsOverlay.classList.contains('hidden')) openSettings();
+  else closeSettings();
+}
+
+function actionNewCamera() {
+  if (!btnNewWindow) return;
+  btnNewWindow.click();
+}
+
+function actionCloseCamera() {
+  stopCamera();
+}
+
+function actionRefresh() {
+  refreshSources();
+}
+
+function actionNextResolution() {
+  if (!resSelect || resSelect.options.length <= 1) return;
+  const idx = resSelect.selectedIndex;
+  const next = (idx + 1) % resSelect.options.length;
+  resSelect.selectedIndex = next;
+  resSelect.dispatchEvent(new Event('change'));
+}
+
+function actionPrevResolution() {
+  if (!resSelect || resSelect.options.length <= 1) return;
+  const idx = resSelect.selectedIndex;
+  const prev = (idx - 1 + resSelect.options.length) % resSelect.options.length;
+  resSelect.selectedIndex = prev;
+  resSelect.dispatchEvent(new Event('change'));
+}
+
+function actionShowHotkeys() {
+  openHotkeysOverlay();
+}
+
+function actionNewWindow() {
+  if (window.electronAPI?.openNewWindow) window.electronAPI.openNewWindow();
+}
+
+function actionSelectCamera(idx) {
+  if (!sourceOptions[idx]) return;
+  deviceSelect.value = String(idx);
+  deviceSelect.dispatchEvent(new Event('change'));
+}
+
+// Consolidated keydown handler — replaces the two scattered listeners.
+// Single-key hotkeys are suppressed when typing in INPUT/SELECT/TEXTAREA.
+// Escape and F5 are exempt (work everywhere). Modifier-based hotkeys
+// (Ctrl+Shift+N) are also exempt (intentional, not accidental).
 document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const tag = document.activeElement ? document.activeElement.tagName : '';
-  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-  if (e.key === 'r' || e.key === 'R') {
-    if (!btnRotate.disabled) btnRotate.click();
-  } else if (e.key === 'f' || e.key === 'F') {
-    if (!btnFlipCamera.disabled) btnFlipCamera.click();
+  // Keybind capture mode — when active, the next keypress is consumed to
+  // rebind the capturing action (Esc cancels). Takes priority over everything.
+  if (capturingAction) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      cancelKeybindCapture();
+    } else {
+      captureKeybind(e);
+    }
+    return;
+  }
+
+  // Escape always works — closes overlays/popovers even in input fields
+  if (e.key === 'Escape') {
+    if (settingsOverlay && !settingsOverlay.classList.contains('hidden')) closeSettings();
+    if (changelogOverlay) changelogOverlay.classList.add('hidden');
+    if (hotkeysOverlay) hotkeysOverlay.classList.add('hidden');
+    setGsPopoverOpen(false);
+    return;
+  }
+
+  // F5 always works — standard refresh key
+  if (e.key === 'F5') {
+    e.preventDefault();
+    actionRefresh();
+    return;
+  }
+
+  // Build the normalized key string for lookup
+  const keyStr = normalizeKey(e);
+  const lookup = buildHotkeyLookup(activeHotkeys);
+  const action = lookup[keyStr.toLowerCase()];
+
+  // Digit keys 1-9 → select camera (not in the hotkeys table, handled specially)
+  if (!e.ctrlKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (e.shiftKey) return; // Shift+digit is a symbol, not a camera select
+    actionSelectCamera(parseInt(e.key, 10) - 1);
+    return;
+  }
+
+  if (!action) return;
+
+  // Input-field guard for single-key hotkeys (no modifiers)
+  const hasModifiers = e.ctrlKey || e.altKey;
+  if (!hasModifiers) {
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  }
+
+  // Dispatch to the action function
+  switch (action) {
+    case 'rotate':         actionRotate(); break;
+    case 'flipCamera':     actionFlipCamera(); break;
+    case 'greenscreen':    actionToggleGreenscreen(); break;
+    case 'settings':       actionToggleSettings(); break;
+    case 'newCamera':      actionNewCamera(); break;
+    case 'closeCamera':    actionCloseCamera(); break;
+    case 'nextResolution': actionNextResolution(); break;
+    case 'prevResolution': actionPrevResolution(); break;
+    case 'showHotkeys':    actionShowHotkeys(); break;
+    case 'newWindow':      actionNewWindow(); break;
   }
 });
 
@@ -1994,6 +2149,199 @@ if (btnCloseChangelog && changelogOverlay) {
   changelogOverlay.addEventListener('click', (e) => {
     if (e.target === changelogOverlay) changelogOverlay.classList.add('hidden');
   });
+}
+
+// ─── Hotkeys reference overlay ────────────────────────────────────────────────
+// Pretty-print a hotkey string as <kbd> elements for the reference table.
+// 'Ctrl+Shift+N' → <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>
+function formatHotkey(key) {
+  return key.split('+').map(p => `<kbd>${p}</kbd>`).join('+');
+}
+
+// Populate the hotkeys table from the active bindings + labels.
+function populateHotkeysTable() {
+  if (!hotkeysTbody) return;
+  const labels = {
+    rotate:         'Rotate camera 90°',
+    flipCamera:     'Flip front/back camera',
+    greenscreen:    'Toggle green screen',
+    settings:       'Open/close settings',
+    newCamera:      'Add camera pane (this window)',
+    closeCamera:    'Stop active camera',
+    nextResolution: 'Next resolution (higher)',
+    prevResolution: 'Previous resolution (lower)',
+    showHotkeys:    'Show this help',
+    newWindow:      'Open new MultiCam window',
+  };
+  hotkeysTbody.innerHTML = '';
+  for (const [action, key] of Object.entries(activeHotkeys)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="hotkey-key">${formatHotkey(key)}</td><td>${labels[action] || action}</td>`;
+    hotkeysTbody.appendChild(tr);
+  }
+  // Add the digit range (1-9) for camera selection — not in the hotkeys table
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="hotkey-key"><kbd>1</kbd>–<kbd>9</kbd></td><td>Select camera 1–9</td>`;
+  hotkeysTbody.appendChild(tr);
+  // Add F5 and Escape (handled outside the dispatch table)
+  const extras = [
+    ['<kbd>F5</kbd>', 'Refresh camera list'],
+    ['<kbd>Esc</kbd>', 'Close overlays / popovers'],
+  ];
+  for (const [k, label] of extras) {
+    const tr2 = document.createElement('tr');
+    tr2.innerHTML = `<td class="hotkey-key">${k}</td><td>${label}</td>`;
+    hotkeysTbody.appendChild(tr2);
+  }
+}
+
+function openHotkeysOverlay() {
+  if (!hotkeysOverlay) return;
+  populateHotkeysTable();
+  hotkeysOverlay.classList.remove('hidden');
+}
+
+function closeHotkeysOverlay() {
+  if (!hotkeysOverlay) return;
+  hotkeysOverlay.classList.add('hidden');
+}
+
+if (btnViewHotkeys && hotkeysOverlay) {
+  btnViewHotkeys.addEventListener('click', openHotkeysOverlay);
+}
+if (btnCloseHotkeys && hotkeysOverlay) {
+  btnCloseHotkeys.addEventListener('click', closeHotkeysOverlay);
+  hotkeysOverlay.addEventListener('click', (e) => {
+    if (e.target === hotkeysOverlay) closeHotkeysOverlay();
+  });
+}
+
+// ─── Keybind customization (Settings overlay) ────────────────────────────────
+// The four user-customizable actions. Other hotkeys (newCamera, closeCamera,
+// resolutions, showHotkeys, newWindow) stay on defaults and are not editable
+// from the settings UI to keep the menu focused.
+const CUSTOMIZABLE_KEYBINDS = ['flipCamera', 'rotate', 'greenscreen', 'settings'];
+
+// Reserved keys that cannot be reassigned (handled outside the dispatch table).
+const RESERVED_KEYS = new Set(['f5', 'escape', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
+
+// State for the capture-in-progress interaction.
+let capturingAction = null;       // action name being rebound, or null
+let capturingButton = null;       // the DOM button element in capture state
+
+// Build the editable keybind rows in the Settings overlay.
+function populateKeybindCustomizeList() {
+  if (!keybindCustomizeList) return;
+  const labels = {
+    flipCamera:  'Flip front/back camera',
+    rotate:      'Rotate camera 90°',
+    greenscreen: 'Toggle green screen',
+    settings:    'Open/close settings',
+  };
+  keybindCustomizeList.innerHTML = '';
+  for (const action of CUSTOMIZABLE_KEYBINDS) {
+    const key = activeHotkeys[action] || '—';
+    const row = document.createElement('div');
+    row.className = 'keybind-customize-row';
+    row.innerHTML = `
+      <span class="keybind-label">${labels[action] || action}</span>
+      <button class="keybind-bind-btn" data-action="${action}" title="Click to reassign">${formatHotkeyPlain(key)}</button>
+    `;
+    keybindCustomizeList.appendChild(row);
+  }
+  // Wire up click handlers on each bind button
+  keybindCustomizeList.querySelectorAll('.keybind-bind-btn').forEach(btn => {
+    btn.addEventListener('click', () => beginKeybindCapture(btn));
+  });
+}
+
+// Plain-text version of a hotkey for button labels (no <kbd> tags).
+function formatHotkeyPlain(key) {
+  return key.split('+').join('+');
+}
+
+// Enter capture mode: the next keypress will rebind this action.
+function beginKeybindCapture(btn) {
+  // If another capture is in progress, cancel it first
+  if (capturingAction) cancelKeybindCapture();
+  capturingAction = btn.dataset.action;
+  capturingButton = btn;
+  btn.classList.add('capturing');
+  btn.textContent = 'Press a key…';
+}
+
+// Cancel capture mode without rebinding.
+function cancelKeybindCapture() {
+  if (!capturingButton) { capturingAction = null; return; }
+  capturingButton.classList.remove('capturing');
+  const action = capturingAction;
+  capturingButton.textContent = formatHotkeyPlain(activeHotkeys[action] || '—');
+  capturingAction = null;
+  capturingButton = null;
+}
+
+// Handle a keypress during capture mode — assign it to the capturing action.
+function captureKeybind(e) {
+  const action = capturingAction;
+  if (!action || !capturingButton) return;
+
+  // Reject bare modifier presses (need an actual key)
+  if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt' || e.key === 'Meta') {
+    return; // keep listening
+  }
+
+  const newKey = normalizeKey(e);
+  const newKeyLower = newKey.toLowerCase();
+
+  // Reject reserved keys
+  if (RESERVED_KEYS.has(newKeyLower)) {
+    capturingButton.classList.add('conflict');
+    capturingButton.textContent = 'Reserved';
+    setTimeout(() => {
+      capturingButton.classList.remove('conflict');
+      capturingButton.textContent = formatHotkeyPlain(activeHotkeys[action] || '—');
+    }, 1000);
+    return;
+  }
+
+  // Detect conflict: is this key already bound to another action?
+  const conflictAction = Object.entries(activeHotkeys).find(
+    ([a, k]) => a !== action && k.toLowerCase() === newKeyLower
+  )?.[0];
+
+  if (conflictAction) {
+    // Auto-swap: give the conflicting action the old key of this action
+    activeHotkeys[conflictAction] = activeHotkeys[action];
+  }
+  activeHotkeys[action] = newKey;
+
+  // Persist
+  saveSettingsDebounced({ hotkeys: activeHotkeys });
+
+  // Update UI
+  capturingButton.classList.remove('capturing');
+  capturingButton.textContent = formatHotkeyPlain(newKey);
+  capturingAction = null;
+  capturingButton = null;
+
+  // Re-render the full list (in case a swap changed another row) + reference table
+  populateKeybindCustomizeList();
+  populateHotkeysTable();
+}
+
+// Reset all customizable keybinds to their defaults.
+function resetKeybindsToDefaults() {
+  for (const action of CUSTOMIZABLE_KEYBINDS) {
+    activeHotkeys[action] = DEFAULT_HOTKEYS[action];
+  }
+  saveSettingsDebounced({ hotkeys: activeHotkeys });
+  if (capturingAction) cancelKeybindCapture();
+  populateKeybindCustomizeList();
+  populateHotkeysTable();
+}
+
+if (btnResetKeybinds) {
+  btnResetKeybinds.addEventListener('click', resetKeybindsToDefaults);
 }
 
 // ─── Window controls (frameless mode) ─────────────────────────────────────────
@@ -2339,15 +2687,6 @@ document.querySelectorAll('.guide-tab').forEach(tab => {
     const panel = document.getElementById('tab-' + tab.dataset.tab);
     if (panel) panel.classList.remove('hidden');
   });
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    if (settingsOverlay && !settingsOverlay.classList.contains('hidden')) closeSettings();
-    if (changelogOverlay) changelogOverlay.classList.add('hidden');
-    setGsPopoverOpen(false);
-  }
-  if (e.key === 'F5')     refreshSources();
 });
 
 window.addEventListener('beforeunload', () => {

@@ -1752,3 +1752,149 @@ button:active {
 .changelog-entry strong {
   color: var(--text);
 }
+
+/* ---- HOTKEYS REFERENCE OVERLAY ---- */
+#hotkeys-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+}
+
+#hotkeys-overlay.hidden {
+  display: none;
+}
+
+#hotkeys-panel {
+  position: relative;
+  z-index: 111;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 92vw;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+}
+
+#hotkeys-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+#hotkeys-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#btn-close-hotkeys {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#btn-close-hotkeys:hover { color: var(--accent); background: transparent; }
+
+#hotkeys-body {
+  padding: 16px 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.hotkeys-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.hotkeys-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hotkeys-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.hotkeys-table tr:last-child td {
+  border-bottom: none;
+}
+
+.hotkey-key {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.hotkeys-table kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ─── Keybind customization (Settings overlay) ─── */
+.keybind-customize-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.keybind-customize-row:last-child {
+  border-bottom: none;
+}
+.keybind-label {
+  font-size: 14px;
+  color: var(--text);
+}
+.keybind-bind-btn {
+  padding: 4px 14px;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 90px;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+.keybind-bind-btn:hover {
+  border-color: var(--accent);
+}
+.keybind-bind-btn.capturing {
+  border-color: var(--accent);
+  background: var(--accent2);
+  color: var(--accent);
+  animation: keybind-pulse 1s ease-in-out infinite;
+}
+.keybind-bind-btn.conflict {
+  border-color: #ff4444;
+  color: #ff4444;
+}
+@keyframes keybind-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
