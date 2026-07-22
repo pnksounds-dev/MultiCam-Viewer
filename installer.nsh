@@ -38,6 +38,38 @@
   !endif
 !macroend
 
+; Register the MultiCam virtual camera driver at install time.
+; NSIS runs elevated for admin installs, so no UAC prompt is needed.
+; /s keeps regsvr32 silent (no native MessageBoxA dialogs); exit codes
+; are checked and logged as warnings but do NOT abort the install —
+; the app still works via Window Capture without the driver.
+!macro customInstall
+  DetailPrint "Registering MultiCam virtual camera driver..."
+  ExecWait 'regsvr32 /s /i:UnityCaptureDevices=4 "$INSTDIR\resources\vcam\UnityCaptureFilter64.dll"' $0
+  ${if} $0 != 0
+    DetailPrint "Warning: 64-bit driver registration failed (code $0). You can register it later from Settings."
+  ${endif}
+  ${if} ${FileExists} "$INSTDIR\resources\vcam\UnityCaptureFilter32.dll"
+    ExecWait '"$WINDIR\SysWOW64\regsvr32.exe" /s /i:UnityCaptureDevices=4 "$INSTDIR\resources\vcam\UnityCaptureFilter32.dll"' $1
+    ${if} $1 != 0
+      DetailPrint "Warning: 32-bit driver registration failed (code $1). 64-bit OBS will still work."
+    ${endif}
+  ${endif}
+!macroend
+
+; Unregister the virtual camera driver on uninstall so the app cleans
+; up after itself. NSIS runs customUnInstall before removing files by
+; default, so the DLLs are still present when regsvr32 /u runs.
 !macro customUnInstall
-  ; electron-builder handles default shortcut removal; no extra needed.
+  DetailPrint "Unregistering MultiCam virtual camera driver..."
+  ExecWait 'regsvr32 /u /s "$INSTDIR\resources\vcam\UnityCaptureFilter64.dll"' $0
+  ${if} $0 != 0
+    DetailPrint "Warning: 64-bit driver unregistration failed (code $0)."
+  ${endif}
+  ${if} ${FileExists} "$INSTDIR\resources\vcam\UnityCaptureFilter32.dll"
+    ExecWait '"$WINDIR\SysWOW64\regsvr32.exe" /u /s "$INSTDIR\resources\vcam\UnityCaptureFilter32.dll"' $1
+    ${if} $1 != 0
+      DetailPrint "Warning: 32-bit driver unregistration failed (code $1)."
+    ${endif}
+  ${endif}
 !macroend

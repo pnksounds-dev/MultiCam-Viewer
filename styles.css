@@ -1390,6 +1390,23 @@ body.clean-mode #vcam-canvas {
   flex-wrap: wrap;
 }
 
+/* ─── Diagnostics output (monospace pre block) ─────────────────────────────── */
+.diagnostics-output {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-elevated, #1a1a1a);
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted, #aaa);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
 /* ─── Exit App button ──────────────────────────────────────────────────────── */
 .exit-app-btn {
   display: flex;

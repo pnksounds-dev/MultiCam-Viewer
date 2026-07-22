@@ -13,8 +13,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onScrcpyLog:       (cb) => ipcRenderer.on('scrcpy-log', (e, data) => cb(data)),
 
   // ── Virtual camera driver ──
-  checkVcam:    () => ipcRenderer.invoke('vcam-check'),
-  registerVcam: () => ipcRenderer.invoke('vcam-register'),
+  checkVcam:      () => ipcRenderer.invoke('vcam-check'),
+  registerVcam:   () => ipcRenderer.invoke('vcam-register'),
+  unregisterVcam: () => ipcRenderer.invoke('vcam-unregister'),
+  vcamDiagnostics: () => ipcRenderer.invoke('vcam:diagnostics'),
   vcamAvailable: () => ipcRenderer.invoke('vcam:available'),
   vcamInit:     (opts) => ipcRenderer.invoke('vcam:init', opts),
   vcamFrame:    (opts) => ipcRenderer.invoke('vcam:frame', opts),

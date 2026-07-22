@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
 const path = require('path');
+const os = require('os');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -409,36 +410,82 @@ function isVcamInstalled() {
   });
 }
 
-function registerVcam() {
-  const dllPath = getVcamDllPath();
-  if (!fs.existsSync(dllPath)) {
-    return Promise.resolve({
-      success: false,
-      error: `DLL not found in vcam/ folder.\nLooked for: UnityCaptureFilter64bit.dll or UnityCaptureFilter64.dll\nvcam folder: ${path.join(getResourcesPath(), 'vcam')}`
-    });
-  }
+// Map regsvr32 HRESULTs to user-friendly messages. Returns null for success.
+function mapRegsvr32Error(code) {
+  if (code === 0) return null;
+  if (code === 0x80070005) return 'Access denied — run as Administrator.';
+  if (code === 0x8007007E) return 'DLL not found or a dependency is missing.';
+  if (code === 0x80040111) return 'Cannot write to the registry — run as Administrator.';
+  if (code === 0x80040201) return 'DllRegisterServer failed — the DLL may be corrupted or incompatible.';
+  if (code === 0x8002801C) return 'ActiveX/COM registration failed — check DLL permissions.';
+  return `Registration failed (error code 0x${(code >>> 0).toString(16).toUpperCase()}).`;
+}
+
+// Register a DLL via regsvr32 with elevation. Uses a temp batch file so the
+// DLL path is never shell-parsed (no PowerShell string interpolation issues
+// with spaces or special characters). Captures the real regsvr32 exit code
+// via Start-Process -PassThru -Wait.
+function registerDllElevated(dllPath, use32BitRegsvr) {
+  const tmpBat = path.join(os.tmpdir(), `mcv-register-${Date.now()}-${Math.random().toString(36).slice(2)}.bat`);
+  const regsvr = use32BitRegsvr ? '"%WINDIR%\\SysWOW64\\regsvr32.exe"' : 'regsvr32';
+  const cmd = `@echo off\n${regsvr} /s /i:UnityCaptureDevices=4 "${dllPath}"\nexit /b %errorlevel%\n`;
+  fs.writeFileSync(tmpBat, cmd, 'utf8');
 
   return new Promise((resolve) => {
-    // Register 4 capture devices so OBS sees MultiCam, MultiCam 2, MultiCam 3, MultiCam 4.
-    // Use execFile with an argument array so the DLL path is never interpreted by a shell.
     execFile(
       'powershell.exe',
       [
-        '-Command',
-        'Start-Process',
-        'regsvr32',
-        '-ArgumentList',
-        `/s /i:UnityCaptureDevices=4 "${dllPath}"`,
-        '-Verb',
-        'RunAs',
-        '-Wait',
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        `$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat.replace(/\\/g, '\\\\')}" -Verb RunAs -Wait -PassThru; exit $p.ExitCode`
       ],
-      { stdio: 'pipe', timeout: 30000 },
+      { stdio: 'pipe', timeout: 60000 },
       (err) => {
+        try { fs.unlinkSync(tmpBat); } catch {}
         if (err) {
           const msg = err.message || 'Registration failed';
           if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
             resolve({ success: false, error: 'UAC prompt was cancelled. Please approve the admin request when prompted.' });
+          } else {
+            // Non-zero exit code from regsvr32 — map it to a friendly message
+            const codeMatch = msg.match(/0x[0-9a-fA-F]+|exit code (\d+)/i);
+            let friendly = msg;
+            if (codeMatch) {
+              const code = codeMatch[0].startsWith('0x')
+                ? parseInt(codeMatch[0], 16)
+                : parseInt(codeMatch[1], 10);
+              friendly = mapRegsvr32Error(code) || msg;
+            }
+            resolve({ success: false, error: friendly });
+          }
+        } else {
+          resolve({ success: true });
+        }
+      }
+    );
+  });
+}
+
+// Unregister a DLL via regsvr32 /u with elevation. Mirrors registerDllElevated.
+function unregisterDllElevated(dllPath, use32BitRegsvr) {
+  const tmpBat = path.join(os.tmpdir(), `mcv-unregister-${Date.now()}-${Math.random().toString(36).slice(2)}.bat`);
+  const regsvr = use32BitRegsvr ? '"%WINDIR%\\SysWOW64\\regsvr32.exe"' : 'regsvr32';
+  const cmd = `@echo off\n${regsvr} /u /s "${dllPath}"\nexit /b %errorlevel%\n`;
+  fs.writeFileSync(tmpBat, cmd, 'utf8');
+
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+        `$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat.replace(/\\/g, '\\\\')}" -Verb RunAs -Wait -PassThru; exit $p.ExitCode`
+      ],
+      { stdio: 'pipe', timeout: 60000 },
+      (err) => {
+        try { fs.unlinkSync(tmpBat); } catch {}
+        if (err) {
+          const msg = err.message || 'Unregistration failed';
+          if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
+            resolve({ success: false, error: 'UAC prompt was cancelled.' });
           } else {
             resolve({ success: false, error: msg });
           }
@@ -448,6 +495,80 @@ function registerVcam() {
       }
     );
   });
+}
+
+// Track the last registration/unregistration error for the diagnostics panel.
+let lastVcamError = null;
+
+async function registerVcam() {
+  const base = path.join(getResourcesPath(), 'vcam');
+  const dll64 = path.join(base, 'UnityCaptureFilter64.dll');
+  const dll32 = path.join(base, 'UnityCaptureFilter32.dll');
+
+  if (!fs.existsSync(dll64)) {
+    lastVcamError = `64-bit DLL not found. Looked for: ${dll64}`;
+    return { success: false, error: lastVcamError };
+  }
+
+  // Register 64-bit first (primary)
+  const r64 = await registerDllElevated(dll64, false);
+  if (!r64.success) {
+    lastVcamError = r64.error;
+    return r64;
+  }
+
+  // Register 32-bit if present (for 32-bit OBS compatibility)
+  if (fs.existsSync(dll32)) {
+    const r32 = await registerDllElevated(dll32, true);
+    if (!r32.success) {
+      // 32-bit failure is non-fatal — 64-bit OBS will still work
+      logToFile('32-bit vcam registration failed (non-fatal): ' + r32.error);
+    }
+  }
+
+  // Verify the driver actually appears in the registry
+  const verified = await isVcamInstalled();
+  if (!verified) {
+    lastVcamError = 'Registration reported success but the driver was not found in the registry. The DLL may be corrupted or a dependency is missing.';
+    return { success: false, error: lastVcamError };
+  }
+
+  lastVcamError = null;
+  return { success: true };
+}
+
+async function unregisterVcam() {
+  const base = path.join(getResourcesPath(), 'vcam');
+  const dll64 = path.join(base, 'UnityCaptureFilter64.dll');
+  const dll32 = path.join(base, 'UnityCaptureFilter32.dll');
+
+  // Unregister 64-bit first
+  if (fs.existsSync(dll64)) {
+    const r64 = await unregisterDllElevated(dll64, false);
+    if (!r64.success) {
+      lastVcamError = r64.error;
+      return r64;
+    }
+  }
+
+  // Unregister 32-bit if present
+  if (fs.existsSync(dll32)) {
+    const r32 = await unregisterDllElevated(dll32, true);
+    if (!r32.success) {
+      // 32-bit failure is non-fatal
+      logToFile('32-bit vcam unregistration failed (non-fatal): ' + r32.error);
+    }
+  }
+
+  // Verify the driver is gone
+  const stillInstalled = await isVcamInstalled();
+  if (stillInstalled) {
+    lastVcamError = 'Unregistration reported success but the driver is still in the registry.';
+    return { success: false, error: lastVcamError };
+  }
+
+  lastVcamError = null;
+  return { success: true };
 }
 
 // ─── Window Factory ──────────────────────────────────────────────────────────
@@ -639,8 +760,22 @@ ipcMain.handle('capture:findWindow', async (e, windowTitle) => {
   return match ? { ok: true, id: match.id, name: match.name } : { ok: false };
 });
 
-ipcMain.handle('vcam-check',    async () => isVcamInstalled());
-ipcMain.handle('vcam-register', async () => registerVcam());
+ipcMain.handle('vcam-check',      async () => isVcamInstalled());
+ipcMain.handle('vcam-register',   async () => registerVcam());
+ipcMain.handle('vcam-unregister', async () => unregisterVcam());
+ipcMain.handle('vcam:diagnostics', async () => {
+  const installed = await isVcamInstalled();
+  return {
+    installed,
+    lastError: lastVcamError,
+    dllPath64: path.join(getResourcesPath(), 'vcam', 'UnityCaptureFilter64.dll'),
+    dllPath32: path.join(getResourcesPath(), 'vcam', 'UnityCaptureFilter32.dll'),
+    dll64Exists: fs.existsSync(path.join(getResourcesPath(), 'vcam', 'UnityCaptureFilter64.dll')),
+    dll32Exists: fs.existsSync(path.join(getResourcesPath(), 'vcam', 'UnityCaptureFilter32.dll')),
+    appVersion: app.getVersion(),
+    resourcesPath: getResourcesPath(),
+  };
+});
 
 // ─── Virtual camera native frame writing ─────────────────────────────────────
 ipcMain.handle('vcam:available', async () => {

@@ -52,6 +52,8 @@ const vcamCanvas         = document.getElementById('vcam-canvas');
 const vcamInstallStatus  = document.getElementById('vcam-install-status');
 const btnInstallVcamSettings   = document.getElementById('btn-install-vcam-settings');
 const btnUninstallVcamSettings = document.getElementById('btn-uninstall-vcam-settings');
+const btnVcamDiagnostics       = document.getElementById('btn-vcam-diagnostics');
+const vcamDiagnosticsOutput    = document.getElementById('vcam-diagnostics-output');
 const currentSlotDisplay = document.getElementById('current-slot-display');
 const settingShowSplash  = document.getElementById('setting-show-splash');
 const settingTheme       = document.getElementById('setting-theme');
@@ -1674,25 +1676,15 @@ async function checkVirtualCameraDriver() {
       vcamInstallStatus.style.color = 'var(--green)';
       if (currentStream) startVcamOutput();
     } else {
-      // Auto-register the driver on launch (will prompt for admin/UAC)
-      setVcamStatus('yellow', 'Installing virtual camera driver (admin prompt)…');
-      vcamInstallStatus.textContent = 'Installing driver…';
+      // Only check — never auto-register on launch. The driver is registered
+      // at install time by NSIS (customInstall macro). For portable/dev builds
+      // or if install-time registration failed, the user clicks the button
+      // explicitly. This eliminates the per-launch UAC prompt.
+      vcamDriverReady = false;
+      setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
+      btnInstallVcam.classList.remove('hidden');
+      vcamInstallStatus.textContent = 'Driver not installed. Click "Register Virtual Camera Driver" below (admin required).';
       vcamInstallStatus.style.color = 'var(--text-muted)';
-      const r = await window.electronAPI.registerVcam();
-      if (r.success) {
-        vcamDriverReady = true;
-        setVcamStatus('green', 'Virtual Camera driver registered');
-        btnInstallVcam.classList.add('hidden');
-        vcamInstallStatus.textContent = '✓ Registered! In OBS, look for "MultiCam" under Video Capture Devices.';
-        vcamInstallStatus.style.color = 'var(--green)';
-        if (currentStream) startVcamOutput();
-      } else {
-        vcamDriverReady = false;
-        setVcamStatus('gray', 'Virtual cam driver not installed — Window Capture still works');
-        btnInstallVcam.classList.remove('hidden');
-        vcamInstallStatus.textContent = '✗ ' + (r.error || 'Auto-install failed. Click below to retry.');
-        vcamInstallStatus.style.color = 'var(--text-muted)';
-      }
     }
   } catch {
     setVcamStatus('gray', 'Could not check driver status');
@@ -1914,10 +1906,56 @@ if (window.electronAPI) {
 if (linkGithub)  linkGithub.addEventListener('click',  (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://github.com/pnksounds-dev'); });
 if (linkWebsite) linkWebsite.addEventListener('click', (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://pnksounds.dev/'); });
 if (linkDiscord) linkDiscord.addEventListener('click', (e) => { e.preventDefault(); window.electronAPI?.openExternal('https://discord.gg/DkyraHSbTW'); });
-btnUninstallVcamSettings.addEventListener('click', () => {
-  vcamInstallStatus.textContent = 'To unregister, run as Admin: regsvr32 /u "vcam\\UnityCaptureFilter64.dll"';
+btnUninstallVcamSettings.addEventListener('click', async () => {
+  if (!window.electronAPI?.unregisterVcam) {
+    vcamInstallStatus.textContent = 'Uninstall not supported in this build.';
+    vcamInstallStatus.style.color = 'var(--text-muted)';
+    return;
+  }
+  setVcamStatus('yellow', 'Unregistering driver (admin prompt)…');
+  vcamInstallStatus.textContent = 'Unregistering…';
   vcamInstallStatus.style.color = 'var(--text-muted)';
+  const r = await window.electronAPI.unregisterVcam();
+  if (r.success) {
+    vcamDriverReady = false;
+    setVcamStatus('gray', 'Virtual cam driver uninstalled — Window Capture still works');
+    btnInstallVcam.classList.remove('hidden');
+    vcamInstallStatus.textContent = '✓ Driver unregistered. "MultiCam" devices will disappear from OBS after restarting OBS.';
+    vcamInstallStatus.style.color = 'var(--green)';
+  } else {
+    setVcamStatus('red', 'Uninstall failed');
+    vcamInstallStatus.textContent = '✗ ' + (r.error || 'Uninstall failed. Run as Administrator.');
+    vcamInstallStatus.style.color = 'var(--accent)';
+  }
 });
+
+if (btnVcamDiagnostics) {
+  btnVcamDiagnostics.addEventListener('click', async () => {
+    if (!window.electronAPI?.vcamDiagnostics) {
+      if (vcamDiagnosticsOutput) {
+        vcamDiagnosticsOutput.classList.remove('hidden');
+        vcamDiagnosticsOutput.textContent = 'Diagnostics not supported in this build.';
+      }
+      return;
+    }
+    if (vcamDiagnosticsOutput) vcamDiagnosticsOutput.classList.remove('hidden');
+    vcamDiagnosticsOutput.textContent = 'Collecting diagnostics…';
+    const d = await window.electronAPI.vcamDiagnostics();
+    const lines = [
+      `MultiCam Viewer v${d.appVersion}`,
+      `Driver installed: ${d.installed ? 'YES' : 'NO'}`,
+      `Last error: ${d.lastError || 'none'}`,
+      ``,
+      `64-bit DLL: ${d.dllPath64}`,
+      `  exists: ${d.dll64Exists ? 'YES' : 'NO'}`,
+      `32-bit DLL: ${d.dllPath32}`,
+      `  exists: ${d.dll32Exists ? 'YES' : 'NO'}`,
+      ``,
+      `Resources path: ${d.resourcesPath}`,
+    ];
+    vcamDiagnosticsOutput.textContent = lines.join('\n');
+  });
+}
 
 // Green screen controls
 btnGreenscreen.addEventListener('click', () => {
