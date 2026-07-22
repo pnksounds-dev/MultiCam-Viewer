@@ -387,16 +387,21 @@ function stopAllScrcpy() {
 }
 
 // ─── Virtual Camera (UnityCapture) ────────────────────────────────────────────
+// Checks if the UnityCapture DirectShow filter is registered by searching the
+// CLSID registry for the filter's friendly name ("MultiCam"). The registration
+// creates CLSID keys with GUID names like {5C2CD55C-...} whose default value
+// is "MultiCam", so we must search recursively (/s) in values (not /k which
+// only searches key names).
 function isVcamInstalled() {
-  const searchTerms = ['UnityCapture', 'Unity Video Capture', 'MultiCam'];
+  const searchTerms = ['MultiCam', 'UnityCapture', 'Unity Video Capture'];
   return new Promise((resolve) => {
     let completed = 0;
     let found = false;
     for (const term of searchTerms) {
       execFile(
         'reg.exe',
-        ['query', 'HKLM\\SOFTWARE\\Classes\\CLSID', '/f', term, '/k'],
-        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 },
+        ['query', 'HKLM\\SOFTWARE\\Classes\\CLSID', '/s', '/f', term],
+        { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 10000 },
         (err, stdout) => {
           if (!found && !err && stdout && stdout.length > 20) {
             found = true;
@@ -423,12 +428,17 @@ function mapRegsvr32Error(code) {
 
 // Register a DLL via regsvr32 with elevation. Uses a temp batch file so the
 // DLL path is never shell-parsed (no PowerShell string interpolation issues
-// with spaces or special characters). Captures the real regsvr32 exit code
-// via Start-Process -PassThru -Wait.
+// with spaces or special characters). Writes the regsvr32 exit code to a temp
+// file because $p.ExitCode is unreliable when Start-Process uses -Verb RunAs
+// (ShellExecute-launched processes don't reliably expose ExitCode on Win10).
 function registerDllElevated(dllPath, use32BitRegsvr) {
-  const tmpBat = path.join(os.tmpdir(), `mcv-register-${Date.now()}-${Math.random().toString(36).slice(2)}.bat`);
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpBat = path.join(os.tmpdir(), `mcv-register-${stamp}.bat`);
+  const tmpResult = path.join(os.tmpdir(), `mcv-register-result-${stamp}.txt`);
   const regsvr = use32BitRegsvr ? '"%WINDIR%\\SysWOW64\\regsvr32.exe"' : 'regsvr32';
-  const cmd = `@echo off\n${regsvr} /s /i:UnityCaptureDevices=4 "${dllPath}"\nexit /b %errorlevel%\n`;
+  // Use \r\n line endings for cmd.exe compatibility. Write the exit code to a
+  // temp file so we can read it after the elevated process completes.
+  const cmd = `@echo off\r\n${regsvr} /s /i:UnityCaptureDevices=4 "${dllPath}"\r\necho %errorlevel% > "${tmpResult}"\r\n`;
   fs.writeFileSync(tmpBat, cmd, 'utf8');
 
   return new Promise((resolve) => {
@@ -436,7 +446,7 @@ function registerDllElevated(dllPath, use32BitRegsvr) {
       'powershell.exe',
       [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        `$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat.replace(/\\/g, '\\\\')}" -Verb RunAs -Wait -PassThru; exit $p.ExitCode`
+        `Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat}" -Verb RunAs -Wait`
       ],
       { stdio: 'pipe', timeout: 60000 },
       (err) => {
@@ -444,21 +454,31 @@ function registerDllElevated(dllPath, use32BitRegsvr) {
         if (err) {
           const msg = err.message || 'Registration failed';
           if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
+            try { fs.unlinkSync(tmpResult); } catch {}
             resolve({ success: false, error: 'UAC prompt was cancelled. Please approve the admin request when prompted.' });
-          } else {
-            // Non-zero exit code from regsvr32 — map it to a friendly message
-            const codeMatch = msg.match(/0x[0-9a-fA-F]+|exit code (\d+)/i);
-            let friendly = msg;
-            if (codeMatch) {
-              const code = codeMatch[0].startsWith('0x')
-                ? parseInt(codeMatch[0], 16)
-                : parseInt(codeMatch[1], 10);
-              friendly = mapRegsvr32Error(code) || msg;
-            }
-            resolve({ success: false, error: friendly });
+            return;
           }
-        } else {
+          // PowerShell itself errored — but the batch may have run. Fall through
+          // to read the result file before giving up.
+        }
+        // Read the exit code from the temp file (reliable across Win10/11)
+        let exitCode = 0;
+        try {
+          const content = fs.readFileSync(tmpResult, 'utf8').trim();
+          exitCode = parseInt(content, 10);
+          if (isNaN(exitCode)) exitCode = 0;
+        } catch {
+          // Result file doesn't exist — the batch didn't run (UAC cancelled or failed)
+          try { fs.unlinkSync(tmpResult); } catch {}
+          resolve({ success: false, error: 'Registration did not complete. The admin prompt may have been cancelled.' });
+          return;
+        }
+        try { fs.unlinkSync(tmpResult); } catch {}
+        if (exitCode === 0) {
           resolve({ success: true });
+        } else {
+          const friendly = mapRegsvr32Error(exitCode);
+          resolve({ success: false, error: friendly || `Registration failed (error code 0x${(exitCode >>> 0).toString(16).toUpperCase()}).` });
         }
       }
     );
@@ -467,9 +487,11 @@ function registerDllElevated(dllPath, use32BitRegsvr) {
 
 // Unregister a DLL via regsvr32 /u with elevation. Mirrors registerDllElevated.
 function unregisterDllElevated(dllPath, use32BitRegsvr) {
-  const tmpBat = path.join(os.tmpdir(), `mcv-unregister-${Date.now()}-${Math.random().toString(36).slice(2)}.bat`);
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpBat = path.join(os.tmpdir(), `mcv-unregister-${stamp}.bat`);
+  const tmpResult = path.join(os.tmpdir(), `mcv-unregister-result-${stamp}.txt`);
   const regsvr = use32BitRegsvr ? '"%WINDIR%\\SysWOW64\\regsvr32.exe"' : 'regsvr32';
-  const cmd = `@echo off\n${regsvr} /u /s "${dllPath}"\nexit /b %errorlevel%\n`;
+  const cmd = `@echo off\r\n${regsvr} /u /s "${dllPath}"\r\necho %errorlevel% > "${tmpResult}"\r\n`;
   fs.writeFileSync(tmpBat, cmd, 'utf8');
 
   return new Promise((resolve) => {
@@ -477,7 +499,7 @@ function unregisterDllElevated(dllPath, use32BitRegsvr) {
       'powershell.exe',
       [
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
-        `$p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat.replace(/\\/g, '\\\\')}" -Verb RunAs -Wait -PassThru; exit $p.ExitCode`
+        `Start-Process -FilePath "cmd.exe" -ArgumentList "/c","${tmpBat}" -Verb RunAs -Wait`
       ],
       { stdio: 'pipe', timeout: 60000 },
       (err) => {
@@ -485,12 +507,26 @@ function unregisterDllElevated(dllPath, use32BitRegsvr) {
         if (err) {
           const msg = err.message || 'Unregistration failed';
           if (msg.includes('cancelled') || msg.includes('1223') || msg.includes('canceled')) {
+            try { fs.unlinkSync(tmpResult); } catch {}
             resolve({ success: false, error: 'UAC prompt was cancelled.' });
-          } else {
-            resolve({ success: false, error: msg });
+            return;
           }
-        } else {
+        }
+        let exitCode = 0;
+        try {
+          const content = fs.readFileSync(tmpResult, 'utf8').trim();
+          exitCode = parseInt(content, 10);
+          if (isNaN(exitCode)) exitCode = 0;
+        } catch {
+          try { fs.unlinkSync(tmpResult); } catch {}
+          resolve({ success: false, error: 'Unregistration did not complete. The admin prompt may have been cancelled.' });
+          return;
+        }
+        try { fs.unlinkSync(tmpResult); } catch {}
+        if (exitCode === 0) {
           resolve({ success: true });
+        } else {
+          resolve({ success: false, error: `Unregistration failed (error code 0x${(exitCode >>> 0).toString(16).toUpperCase()}).` });
         }
       }
     );
@@ -505,13 +541,18 @@ async function registerVcam() {
   const dll64 = path.join(base, 'UnityCaptureFilter64.dll');
   const dll32 = path.join(base, 'UnityCaptureFilter32.dll');
 
+  logToFile('registerVcam: starting. base=' + base + ' dll64=' + dll64 + ' exists64=' + fs.existsSync(dll64));
+
   if (!fs.existsSync(dll64)) {
     lastVcamError = `64-bit DLL not found. Looked for: ${dll64}`;
+    logToFile('registerVcam: ' + lastVcamError);
     return { success: false, error: lastVcamError };
   }
 
   // Register 64-bit first (primary)
+  logToFile('registerVcam: registering 64-bit DLL...');
   const r64 = await registerDllElevated(dll64, false);
+  logToFile('registerVcam: 64-bit result: ' + JSON.stringify(r64));
   if (!r64.success) {
     lastVcamError = r64.error;
     return r64;
@@ -519,7 +560,9 @@ async function registerVcam() {
 
   // Register 32-bit if present (for 32-bit OBS compatibility)
   if (fs.existsSync(dll32)) {
+    logToFile('registerVcam: registering 32-bit DLL...');
     const r32 = await registerDllElevated(dll32, true);
+    logToFile('registerVcam: 32-bit result: ' + JSON.stringify(r32));
     if (!r32.success) {
       // 32-bit failure is non-fatal — 64-bit OBS will still work
       logToFile('32-bit vcam registration failed (non-fatal): ' + r32.error);
@@ -527,13 +570,16 @@ async function registerVcam() {
   }
 
   // Verify the driver actually appears in the registry
+  logToFile('registerVcam: verifying registration...');
   const verified = await isVcamInstalled();
+  logToFile('registerVcam: verified=' + verified);
   if (!verified) {
     lastVcamError = 'Registration reported success but the driver was not found in the registry. The DLL may be corrupted or a dependency is missing.';
     return { success: false, error: lastVcamError };
   }
 
   lastVcamError = null;
+  logToFile('registerVcam: success');
   return { success: true };
 }
 
