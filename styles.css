@@ -244,6 +244,12 @@ button:active {
   min-width: var(--ctrl-h);
 }
 
+.toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .toolbar-btn svg {
   flex-shrink: 0;
   opacity: 0.9;

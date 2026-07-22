@@ -34,6 +34,8 @@ const newCameraDropdown  = document.getElementById('new-camera-dropdown');
 const btnNewSameWindow   = document.getElementById('btn-new-same-window');
 const btnNewSeparate     = document.getElementById('btn-new-separate');
 const btnOutputWindow    = document.getElementById('btn-output-window');
+const btnRotate          = document.getElementById('btn-rotate');
+const btnFlipCamera      = document.getElementById('btn-flip-camera');
 const btnRefresh         = document.getElementById('btn-refresh');
 const btnSettings        = document.getElementById('btn-settings');
 const settingsOverlay    = document.getElementById('settings-overlay');
@@ -111,6 +113,10 @@ let fpsInterval      = null;
 let lastFpsTime      = Date.now();
 let frameHandle      = null;    // id from requestVideoFrameCallback or requestAnimationFrame
 let vcamCtx          = null;
+let cameraRotation   = 180;      // 0, 90, 180, 270 — applied to main video + vcam output
+                                    // Default 180°: phone camera sensor orientation makes the
+                                    // raw vcam output upside-down relative to the browser's
+                                    // <video> view. Rotating both by 180° aligns them.
 
 // ─── Phase 1 frame-pipeline instrumentation ───────────────────────────────────
 // Prefer requestVideoFrameCallback so we only do a GPU readback + IPC send when
@@ -527,6 +533,7 @@ async function startSelected() {
   } else {
     await startUvcCamera(opt);
   }
+  updateCameraControlButtons(opt);
 }
 
 // ── Phone camera via scrcpy + desktop capture ──
@@ -632,11 +639,37 @@ async function startUvcCamera(opt) {
   }
 }
 
+// Apply the current cameraRotation to the main <video> element via CSS transform.
+// For 90°/270°, the rotated video won't fill the container without a scale factor
+// computed from the container and video aspect ratios.
+function applyVideoRotation() {
+  const deg = cameraRotation;
+  if (deg === 0) {
+    cameraVideo.style.transform = '';
+    return;
+  }
+  if (deg === 180) {
+    cameraVideo.style.transform = 'rotate(180deg)';
+    return;
+  }
+  // 90/270: compute scale so the rotated video fills the container
+  const container = cameraVideo.parentElement;
+  const cw = container ? container.clientWidth  : 0;
+  const ch = container ? container.clientHeight : 0;
+  const vw = cameraVideo.videoWidth  || cw || 1;
+  const vh = cameraVideo.videoHeight || ch || 1;
+  // After 90/270 rotation, video width↔height swap relative to container.
+  // Scale to cover: max(containerW / videoH, containerH / videoW)
+  const scale = (cw && ch) ? Math.max(cw / vh, ch / vw) : 1;
+  cameraVideo.style.transform = `rotate(${deg}deg) scale(${scale.toFixed(3)})`;
+}
+
 // ── Common: attach a stream to the preview + start outputs ──
 function attachStream(name) {
   cameraVideo.srcObject = currentStream;
   cameraVideo.classList.add('active');
   noCameraMsg.style.display = 'none';
+  applyVideoRotation();
 
   cameraVideo.onloadedmetadata = () => {
     const vt = currentStream.getVideoTracks()[0];
@@ -664,10 +697,33 @@ function stopCamera() {
   }
   cameraVideo.srcObject = null;
   cameraVideo.classList.remove('active');
+  cameraVideo.style.transform = '';
   noCameraMsg.style.display = 'flex';
   stopFpsCounter();
   stopVcamOutput();
   updateGreenscreenUI();
+  updateCameraControlButtons(null);
+}
+
+// Enable/disable the rotate and flip buttons based on the active camera.
+// Rotate is enabled for any active camera. Flip is enabled only for phone
+// cameras that have a front/back counterpart in the source list.
+function updateCameraControlButtons(opt) {
+  if (!opt) {
+    btnRotate.disabled = true;
+    btnFlipCamera.disabled = true;
+    return;
+  }
+  btnRotate.disabled = false;
+  if (opt.kind !== 'phone') {
+    btnFlipCamera.disabled = true;
+    return;
+  }
+  const targetFacing = opt.facing === 'back' ? 'front' : 'back';
+  const hasOther = sourceOptions.some(
+    o => o.kind === 'phone' && o.serial === opt.serial && o.facing === targetFacing
+  );
+  btnFlipCamera.disabled = !hasOther;
 }
 
 // ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
@@ -1287,8 +1343,13 @@ async function startVcamOutput() {
   if (!currentStream) return;
   // Use actual video element dimensions if available, fall back to track settings
   const s = currentStream.getVideoTracks()[0].getSettings();
-  const w = cameraVideo.videoWidth  || s.width  || 1280;
-  const h = cameraVideo.videoHeight || s.height || 720;
+  const vw = cameraVideo.videoWidth  || s.width  || 1280;
+  const vh = cameraVideo.videoHeight || s.height || 720;
+  // For 90°/270° rotations, the output canvas dimensions are swapped so the
+  // rotated frame fills the canvas without cropping.
+  const rotated = (cameraRotation === 90 || cameraRotation === 270);
+  const w = rotated ? vh : vw;
+  const h = rotated ? vw : vh;
 
   vcamCanvas.width = w; vcamCanvas.height = h;
 
@@ -1297,7 +1358,10 @@ async function startVcamOutput() {
   // compositor when greenscreen is active — startFrameLoop will acquire a 2D
   // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
   // in which case we fall back to the 2D canvas path.
-  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled) {
+  // Also bypass the GL compositor when rotation is active — the 2D path handles
+  // rotation via drawVideoRotated(); adding rotation to the shader is not worth
+  // the complexity for a user-applied effect.
+  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled && cameraRotation === 0) {
     glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
   } else {
     glCompositor = null;
@@ -1489,11 +1553,33 @@ function sendFrameToVcam(width, height) {
     .finally(() => { vcamFrameInFlight = false; });
 }
 
+// Draw a video element to a 2D canvas context with the current cameraRotation.
+// w/h are the canvas dimensions (already swapped for 90/270 in startVcamOutput).
+// The video is drawn at its natural size then rotated around the canvas center.
+function drawVideoRotated(ctx, video, w, h) {
+  const deg = cameraRotation;
+  if (deg === 0) {
+    ctx.drawImage(video, 0, 0, w, h);
+    return;
+  }
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(deg * Math.PI / 180);
+  if (deg === 90 || deg === 270) {
+    // After rotating 90/270, the video's w/h are swapped relative to the canvas
+    ctx.drawImage(video, -h / 2, -w / 2, h, w);
+  } else {
+    // 180: same dimensions
+    ctx.drawImage(video, -w / 2, -h / 2, w, h);
+  }
+  ctx.restore();
+}
+
 function startRawFrameLoop(w, h) {
   function draw() {
     if (!currentStream || !vcamCtx) return;
     setVideoFilters(vcamCtx);
-    vcamCtx.drawImage(cameraVideo, 0, 0, w, h);
+    drawVideoRotated(vcamCtx, cameraVideo, w, h);
     vcamCtx.filter = 'none';
     sendFrameToVcam(w, h);
     perfFrameCount++;
@@ -1566,14 +1652,17 @@ function onSegmentationResults(results) {
   const w = vcamCanvas.width;
   const h = vcamCanvas.height;
 
-  // 1. Draw original frame (person + background) with video adjustments
+  // 1. Draw original frame (person + background) with video adjustments.
+  // drawVideoRotated handles 0/90/180/270 — the save/restore inside it
+  // preserves the current compositing mode for the mask step below.
   setVideoFilters(vcamCtx);
-  vcamCtx.drawImage(results.image, 0, 0, w, h);
+  drawVideoRotated(vcamCtx, results.image, w, h);
   vcamCtx.filter = 'none';
 
-  // 2. Apply mask to keep only the person (MediaPipe soft mask as-is)
+  // 2. Apply mask to keep only the person (MediaPipe soft mask as-is).
+  // Same rotation so the mask aligns with the rotated image.
   vcamCtx.globalCompositeOperation = 'destination-in';
-  vcamCtx.drawImage(results.segmentationMask, 0, 0, w, h);
+  drawVideoRotated(vcamCtx, results.segmentationMask, w, h);
 
   // 3. Draw new background behind the person
   vcamCtx.globalCompositeOperation = 'destination-over';
@@ -1765,6 +1854,52 @@ btnClosePane0.addEventListener('click', () => {
 
 // Close the new-camera dropdown when clicking anywhere else.
 document.addEventListener('click', () => newCameraDropdown.classList.add('hidden'));
+
+// Rotate button: cycles through 0° → 90° → 180° → 270°.
+// Applies CSS transform to the main <video> and restarts the vcam output so
+// the canvas dimensions swap for 90°/270°.
+btnRotate.addEventListener('click', () => {
+  if (btnRotate.disabled) return;
+  cameraRotation = (cameraRotation + 90) % 360;
+  applyVideoRotation();
+  // Restart the vcam output to resize the canvas for the new orientation.
+  // This also re-evaluates whether to use the GL or 2D path.
+  if (currentStream) startVcamOutput();
+});
+
+// Flip button: swaps between front and back camera for the active phone.
+// Finds the other camera entry in sourceOptions with the same serial but
+// different facing, selects it in the dropdown, and restarts the camera.
+btnFlipCamera.addEventListener('click', async () => {
+  if (btnFlipCamera.disabled) return;
+  const idx = deviceSelect.value;
+  if (idx === '' || idx === null) return;
+  const opt = sourceOptions[Number(idx)];
+  if (!opt || opt.kind !== 'phone') return;
+
+  // Find the other camera for the same phone (same serial, different facing)
+  const targetFacing = opt.facing === 'back' ? 'front' : 'back';
+  const otherIdx = sourceOptions.findIndex(
+    o => o.kind === 'phone' && o.serial === opt.serial && o.facing === targetFacing
+  );
+  if (otherIdx < 0) return;
+
+  // Select the other camera in the dropdown and start it
+  deviceSelect.value = String(otherIdx);
+  await startSelected();
+});
+
+// Keyboard shortcuts: R = rotate, F = flip (only when not typing in a field)
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = document.activeElement ? document.activeElement.tagName : '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'r' || e.key === 'R') {
+    if (!btnRotate.disabled) btnRotate.click();
+  } else if (e.key === 'f' || e.key === 'F') {
+    if (!btnFlipCamera.disabled) btnFlipCamera.click();
+  }
+});
 
 btnOutputWindow.addEventListener('click', () => {
   if (outputWindow && !outputWindow.closed) {
