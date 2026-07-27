@@ -184,6 +184,6 @@ test('buildScrcpyArgs: includes fps and core flags', () => {
   assert.ok(args.includes('-s'), 'should include serial flag');
   assert.ok(args.includes('--video-source=camera'));
   assert.ok(args.includes('--camera-id=0'));
-  assert.ok(args.includes('--max-fps=30'));
+  assert.ok(args.includes('--camera-fps=30'));
   assert.ok(args.includes('--window-borderless'));
 });
