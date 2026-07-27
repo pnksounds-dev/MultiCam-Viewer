@@ -185,6 +185,35 @@ let windowIndex      = 0;       // 0-based window index (0 = first window)
 let processPid       = 0;       // PID of the Electron main process (for unique scrcpy titles)
 let vcamNativeReady  = false;   // true when the shared-memory frame bridge is active
 
+// Per-phone last-used camera id, keyed by device serial. Populated from
+// settings on startup and updated whenever the user flips or starts a phone
+// camera, so each phone defaults to the camera (front/back) it last used.
+let savedCameraBySerial = {};
+
+// Per-phone last-used resolution, keyed by device serial. Same pattern as
+// savedCameraBySerial — allows each phone to remember its own resolution
+// independently of the global default.
+let savedResolutionBySerial = {};
+
+// The standard resolution options shown in the dropdown when no phone is
+// selected or when the phone's camera doesn't report supported sizes. These
+// match the original hardcoded <option> list in index.html.
+// "auto" is always first and selected by default — it tells the app to pick
+// the best resolution the camera supports (see detectBestResolution).
+const AUTO_RES_VALUE = 'auto';
+const DEFAULT_RESOLUTION_OPTIONS = [
+  { value: AUTO_RES_VALUE,  label: 'Auto (detect)' },
+  { value: '1920x1080', label: '1920×1080' },
+  { value: '1280x720',  label: '1280×720'  },
+  { value: '854x480',   label: '854×480'   },
+  { value: '640x360',   label: '640×360'   },
+  { value: '1080x1920', label: '1080×1920' },
+  { value: '720x1280',  label: '720×1280'  },
+  { value: '1080x1080', label: '1080×1080' },
+  { value: '720x720',   label: '720×720'   },
+  { value: '640x480',   label: '640×480'   },
+];
+
 // ─── Same-window additional camera panes (CCTV grid) ──────────────────────────
 const secondaryPanes = []; // { id, element, select, video, stream, scrcpyTitle }
 let nextPaneId = 1;
@@ -230,6 +259,16 @@ window.setVideoAdjustment = setVideoAdjustment;
 function applySettings(settings) {
   if (settings.resolution && resSelect.querySelector(`option[value="${settings.resolution}"]`)) {
     resSelect.value = settings.resolution;
+  }
+  // Per-phone last-used camera map (serial → camera id). Kept in memory so
+  // _refreshSourcesInner can restore the right camera when phones are listed.
+  if (settings.lastCameraBySerial && typeof settings.lastCameraBySerial === 'object') {
+    savedCameraBySerial = { ...settings.lastCameraBySerial };
+  }
+  // Per-phone last-used resolution map (serial → "WxH"). Kept in memory so
+  // populateResolutionOptions can restore the right resolution per phone.
+  if (settings.lastResolutionBySerial && typeof settings.lastResolutionBySerial === 'object') {
+    savedResolutionBySerial = { ...settings.lastResolutionBySerial };
   }
   if (settings.greenscreenEnabled && isPremium()) {
     greenscreenEnabled = true;
@@ -286,6 +325,200 @@ function saveSettingsDebounced(patch) {
   }, 150);
 }
 
+// Persist the active camera for a given phone serial so it can be restored on
+// the next launch / source refresh. Updates the in-memory cache immediately so
+// subsequent calls in the same tick see the new value, and debounces the write.
+function persistPhoneCamera(serial, cameraId) {
+  if (!serial || cameraId == null) return;
+  savedCameraBySerial = { ...savedCameraBySerial, [serial]: String(cameraId) };
+  saveSettingsDebounced({ lastCameraBySerial: savedCameraBySerial });
+}
+
+// Persist the selected resolution for a given phone serial so it can be
+// restored on the next launch / device reselection.
+function persistPhoneResolution(serial, resolution) {
+  if (!serial || !resolution) return;
+  savedResolutionBySerial = { ...savedResolutionBySerial, [serial]: resolution };
+  saveSettingsDebounced({ lastResolutionBySerial: savedResolutionBySerial });
+}
+
+// Detect the best resolution for a camera from its list of supported capture
+// sizes. "Best" = the largest 16:9 size with max dimension ≤ 1920 (1080p-class
+// is plenty for a webcam feed; 4K would cause encoder lag). If no 16:9 sizes
+// are available, picks the largest size ≤ 1920 regardless of aspect ratio.
+// If no sizes are reported, falls back to 1920x1080 (the most universally
+// supported resolution on modern phones).
+//
+// Returns a "WxH" string (e.g. "1920x1080").
+function detectBestResolution(cam) {
+  const MAX_DIM = 1920;
+  const TARGET_AR = 16 / 9;
+  const AR_TOLERANCE = 0.1;
+
+  if (cam && cam.sizes && cam.sizes.length) {
+    let best16x9 = null;
+    let bestAny = null;
+    for (const size of cam.sizes) {
+      const parts = size.split('x');
+      const w = parseInt(parts[0], 10);
+      const h = parseInt(parts[1], 10);
+      if (!(w > 0) || !(h > 0)) continue;
+      const maxDim = Math.max(w, h);
+      if (maxDim > MAX_DIM) continue;
+      const pixels = w * h;
+      // Track the largest (by pixel count) size within the bound
+      if (!bestAny || pixels > bestAny.pixels) {
+        bestAny = { w, h, pixels };
+      }
+      // Track the largest 16:9 size within the bound
+      const ar = w / h;
+      if (Math.abs(ar / TARGET_AR - 1) <= AR_TOLERANCE) {
+        if (!best16x9 || pixels > best16x9.pixels) {
+          best16x9 = { w, h, pixels };
+        }
+      }
+    }
+    if (best16x9) return `${best16x9.w}x${best16x9.h}`;
+    if (bestAny) return `${bestAny.w}x${bestAny.h}`;
+  }
+
+  // No sizes available — fall back to 1080p, the most commonly supported
+  // resolution on modern Android phones. scrcpy's --max-size will pick a
+  // supported size close to this.
+  return '1920x1080';
+}
+
+// Check whether a standard resolution (e.g. "1280x720") is feasible given the
+// camera's list of supported capture sizes. Returns true if the camera has at
+// least one size that fits within the resolution's max dimension AND matches
+// its aspect ratio within ±10% (same tolerance as scrcpy's --camera-ar).
+// If the camera reports no sizes, falls back to checking maxRes (the sensor's
+// max resolution from the camera header, which is always available).
+function resolutionSupportedByCamera(resW, resH, sizes, maxRes) {
+  const targetAR = resW / resH;
+  const targetMaxDim = Math.max(resW, resH);
+
+  // Primary path: check against the full list of supported sizes.
+  if (sizes && sizes.length) {
+    for (const size of sizes) {
+      const parts = size.split('x');
+      const sw = parseInt(parts[0], 10);
+      const sh = parseInt(parts[1], 10);
+      if (!(sw > 0) || !(sh > 0)) continue;
+      if (Math.max(sw, sh) > targetMaxDim) continue;
+      const ar = sw / sh;
+      if (Math.abs(ar / targetAR - 1) <= 0.1) return true;
+    }
+    return false;
+  }
+
+  // Fallback: use maxRes (always available from the camera header line) to at
+  // least reject resolutions that exceed the camera's max dimension. We can't
+  // check aspect ratio here, so we accept any resolution that fits.
+  if (maxRes) {
+    const parts = String(maxRes).split('x');
+    const mw = parseInt(parts[0], 10);
+    const mh = parseInt(parts[1], 10);
+    if (mw > 0 && mh > 0) {
+      return targetMaxDim <= Math.max(mw, mh);
+    }
+  }
+
+  // No info at all — show everything (safe fallback, user can pick).
+  return true;
+}
+
+// Track which phone serial the current resSelect.value was chosen for, so we
+// know when a phone switch happens and can avoid carrying over the previous
+// phone's resolution (which may not be safe for the new phone).
+let currentResSerial = null;
+
+// Rebuild the resolution dropdown based on the currently selected phone's
+// camera capabilities. For UVC cameras or no selection, show all defaults.
+// For phone cameras with known supported sizes, filter to only the standard
+// resolutions the camera can actually deliver.
+//
+// "Auto" is always the first option and is selected by default. When auto is
+// selected, the app calls detectBestResolution() at camera-start time to pick
+// the best resolution the camera supports — the user never has to choose.
+//
+// IMPORTANT: when switching to a DIFFERENT phone, we never carry over the
+// previous phone's manual resolution — it may be unsupported and crash the
+// phone. We default to "auto" instead, which is always safe.
+function populateResolutionOptions(opt) {
+  const prevValue = resSelect.value;
+  const prevSerial = currentResSerial;
+  const newSerial = opt && opt.kind === 'phone' ? opt.serial : null;
+  // True if the phone is changing (not just flipping cameras on the same phone)
+  const phoneChanged = newSerial !== prevSerial;
+
+  while (resSelect.options.length > 0) resSelect.remove(0);
+
+  // Build the option list. "Auto" is always first. For phone cameras, filter
+  // the manual resolutions to only those the camera supports.
+  let manualOptions = DEFAULT_RESOLUTION_OPTIONS.filter(o => o.value !== AUTO_RES_VALUE);
+
+  if (opt && opt.kind === 'phone') {
+    const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
+    if (cam) {
+      const sizes = cam.sizes && cam.sizes.length ? cam.sizes : null;
+      const maxRes = cam.maxRes || null;
+      if (sizes || maxRes) {
+        manualOptions = manualOptions.filter(o => {
+          const [w, h] = o.value.split('x').map(Number);
+          return resolutionSupportedByCamera(w, h, sizes, maxRes);
+        });
+        // If filtering removed everything, fall back to all manual options.
+        if (!manualOptions.length) manualOptions = DEFAULT_RESOLUTION_OPTIONS.filter(o => o.value !== AUTO_RES_VALUE);
+      }
+    }
+  }
+
+  // Build the "Auto" option with a label showing what it will detect.
+  let autoLabel = 'Auto (detect)';
+  if (opt && opt.kind === 'phone') {
+    const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
+    if (cam) {
+      const detected = detectBestResolution(cam);
+      autoLabel = `Auto (${detected.replace('x', '×')})`;
+    }
+  }
+  const autoOption = document.createElement('option');
+  autoOption.value = AUTO_RES_VALUE;
+  autoOption.textContent = autoLabel;
+  resSelect.appendChild(autoOption);
+
+  for (const o of manualOptions) {
+    const el = document.createElement('option');
+    el.value = o.value;
+    el.textContent = o.label;
+    resSelect.appendChild(el);
+  }
+
+  // Try to restore a valid selection in priority order:
+  // 1. Per-phone saved resolution (if still in the filtered list)
+  // 2. Previous selection — ONLY if the phone hasn't changed (e.g. camera flip).
+  //    Carrying over the previous phone's resolution to a new phone is dangerous
+  //    because the new phone may not support it and could crash.
+  // 3. "Auto" — always safe, always first, always available
+  const savedRes = newSerial ? savedResolutionBySerial[newSerial] : null;
+  const trySet = (val) => {
+    if (val && [...resSelect.options].some(o => o.value === val)) {
+      resSelect.value = val;
+      return true;
+    }
+    return false;
+  };
+  if (trySet(savedRes)) { currentResSerial = newSerial; return; }
+  // Only carry over prevValue when staying on the same phone (e.g. flip)
+  if (!phoneChanged && trySet(prevValue)) { currentResSerial = newSerial; return; }
+  // Default to "auto" — the safe, out-of-the-box choice that requires no user
+  // intervention and works with any phone.
+  if (trySet(AUTO_RES_VALUE)) { currentResSerial = newSerial; return; }
+  if (resSelect.options.length > 0) resSelect.selectedIndex = 0;
+  currentResSerial = newSerial;
+}
+
 // ─── Startup ──────────────────────────────────────────────────────────────────
 async function init() {
   if (window.electronAPI) {
@@ -331,6 +564,10 @@ async function init() {
   }
 
   await refreshSources();
+  // Initialize the resolution dropdown with default options (no phone selected
+  // yet). populateResolutionOptions will be called again when a phone is
+  // selected, filtering to that phone's supported sizes.
+  populateResolutionOptions(null);
   // Only auto-select the last used camera in the first window.
   // Additional windows start with no camera selected to avoid grabbing
   // the same device that is already in use by window 1.
@@ -340,6 +577,9 @@ async function init() {
       if (settings && settings.lastDeviceIndex !== '' &&
           [...deviceSelect.options].some(o => o.value === String(settings.lastDeviceIndex))) {
         deviceSelect.value = String(settings.lastDeviceIndex);
+        // Populate resolution dropdown for the auto-selected phone before starting.
+        const opt = sourceOptions[Number(deviceSelect.value)];
+        populateResolutionOptions(opt);
         startSelected();
       }
     } catch {}
@@ -448,12 +688,22 @@ async function _refreshSourcesInner() {
     // Fallback if camera listing failed: assume one back camera
     if (!cams.length) cams = [{ id: '0', facing: 'back', maxRes: '' }];
 
+    // Restore the last-used camera for this phone (by serial → camera id) so
+    // the phone defaults to the front/back camera the user previously selected,
+    // instead of always the first one in the list.
+    const savedCamId = savedCameraBySerial[ph.serial];
+    let initialCamIndex = 0;
+    if (savedCamId != null) {
+      const idx = cams.findIndex(c => String(c.id) === String(savedCamId));
+      if (idx >= 0) initialCamIndex = idx;
+    }
+
     sourceOptions.push({
       kind: 'phone',
       serial: ph.serial,
       model: ph.model,
       cameras: cams,          // [{ id, facing, maxRes }, ...]
-      currentCamIndex: 0,     // which entry in `cameras` is active
+      currentCamIndex: initialCamIndex,  // which entry in `cameras` is active
       label: ph.model || ph.serial || 'Phone Camera',
     });
   }
@@ -530,7 +780,15 @@ async function startSelected() {
 // and re-enters here to restart scrcpy with the other camera.
 async function startPhoneCamera(opt) {
   const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
-  const resolution = resSelect.value || '1280x720';
+  // Remember the camera being used for this phone so it's restored on the
+  // next launch / source refresh.
+  persistPhoneCamera(opt.serial, cam.id);
+  // Resolve "auto" to the best resolution this camera supports. For manual
+  // resolutions, use the selected value directly.
+  const selectedRes = resSelect.value || AUTO_RES_VALUE;
+  const resolution = selectedRes === AUTO_RES_VALUE
+    ? detectBestResolution(cam)
+    : selectedRes;
   const windowTitle = `MultiCamCap_${processPid}_${opt.serial}_${cam.id}_${vcamSlot}`;
   activeScrcpyTitle = windowTitle;
   lastScrcpyError = '';
@@ -612,7 +870,10 @@ async function waitForCaptureWindow(title, timeoutMs) {
 // ── Real UVC camera via getUserMedia ──
 async function startUvcCamera(opt) {
   activeScrcpyTitle = null;
-  const [w, h] = (resSelect.value || '1280x720').split('x').map(Number);
+  // "auto" for UVC cameras means 1080p (getUserMedia uses ideal constraints,
+  // so the browser will negotiate the closest supported size).
+  const resVal = resSelect.value || AUTO_RES_VALUE;
+  const [w, h] = (resVal === AUTO_RES_VALUE ? '1920x1080' : resVal).split('x').map(Number);
   statusText.textContent = 'Connecting to camera…';
   try {
     currentStream = await navigator.mediaDevices.getUserMedia({
@@ -829,7 +1090,12 @@ function startSecondaryPaneCamera(id) {
 
 async function startSecondaryPhoneCamera(pane, opt) {
   const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
-  const resolution = resSelect.value || '1280x720';
+  persistPhoneCamera(opt.serial, cam.id);
+  // Resolve "auto" to the best resolution this camera supports.
+  const selectedRes = resSelect.value || AUTO_RES_VALUE;
+  const resolution = selectedRes === AUTO_RES_VALUE
+    ? detectBestResolution(cam)
+    : selectedRes;
   const windowTitle = `MultiCamCap${processPid}_${pane.id}_${opt.serial}_${cam.id}_${vcamSlot}`;
   pane.scrcpyTitle = windowTitle;
 
@@ -889,7 +1155,8 @@ async function startSecondaryPhoneCamera(pane, opt) {
 }
 
 async function startSecondaryUvcCamera(pane, opt) {
-  const [w, h] = (resSelect.value || '1280x720').split('x').map(Number);
+  const resVal = resSelect.value || AUTO_RES_VALUE;
+  const [w, h] = (resVal === AUTO_RES_VALUE ? '1920x1080' : resVal).split('x').map(Number);
   try {
     pane.stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -1858,10 +2125,21 @@ async function installVcamDriver() {
 // ─── Event Listeners ──────────────────────────────────────────────────────────
 deviceSelect.addEventListener('change', () => {
   saveSettingsDebounced({ lastDeviceIndex: deviceSelect.value });
+  // Rebuild the resolution dropdown based on the selected phone's camera
+  // capabilities before starting, so only supported resolutions are offered.
+  const opt = sourceOptions[Number(deviceSelect.value)];
+  populateResolutionOptions(opt);
   startSelected();
 });
 resSelect.addEventListener('change', () => {
   saveSettingsDebounced({ resolution: resSelect.value });
+  // Persist the resolution per-phone so each phone remembers its own setting.
+  // Don't persist "auto" — it's the default, not a manual choice. This way
+  // "auto" stays the default until the user explicitly picks a resolution.
+  const opt = sourceOptions[Number(deviceSelect.value)];
+  if (opt && opt.kind === 'phone' && resSelect.value !== AUTO_RES_VALUE) {
+    persistPhoneResolution(opt.serial, resSelect.value);
+  }
   if (deviceSelect.value !== '') startSelected();
 });
 
@@ -1928,6 +2206,12 @@ btnFlipCamera.addEventListener('click', async () => {
 
   // Cycle to the next camera in the phone's camera list (front ↔ back)
   opt.currentCamIndex = (opt.currentCamIndex + 1) % opt.cameras.length;
+  // Remember the newly-selected camera for this phone so it's restored on
+  // the next launch / source refresh.
+  const cam = opt.cameras[opt.currentCamIndex];
+  if (cam) persistPhoneCamera(opt.serial, cam.id);
+  // The new camera may support different sizes — refresh the resolution dropdown.
+  populateResolutionOptions(opt);
   await startSelected();
 });
 

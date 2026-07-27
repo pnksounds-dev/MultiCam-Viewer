@@ -7,6 +7,8 @@ const {
   adbIssueMessage,
   parseAdbDevices,
   parseScrcpyCameras,
+  parseScrcpyCameraSizes,
+  computeAspectRatio,
   slotLabel,
   clampInt,
   isValidSerial,
@@ -97,6 +99,66 @@ test('parseScrcpyCameras: returns empty on no matches / bad input', () => {
   assert.deepEqual(parseScrcpyCameras(null), []);
 });
 
+// ─── parseScrcpyCameraSizes ───────────────────────────────────────────────────
+test('parseScrcpyCameraSizes: extracts cameras with supported sizes', () => {
+  const out = [
+    '[server] INFO: List of camera sizes:',
+    '    --camera-id=0    (back, 4080x3060, fps=[15, 20, 24, 30])',
+    '        - 4080x3060',
+    '        - 1920x1080',
+    '        - 1280x720',
+    '        - 640x480',
+    '      High speed capture (--camera-high-speed):',
+    '        - 1920x1080 (fps=[120, 240])',
+    '    --camera-id=1    (front, 4128x3096, fps=[10, 15, 20, 30])',
+    '        - 4128x3096',
+    '        - 1920x1080',
+    '        - 1280x720',
+  ].join('\n');
+  const cams = parseScrcpyCameraSizes(out);
+  assert.equal(cams.length, 2);
+  assert.equal(cams[0].id, '0');
+  assert.equal(cams[0].facing, 'back');
+  assert.equal(cams[0].maxRes, '4080x3060');
+  assert.deepEqual(cams[0].sizes, ['4080x3060', '1920x1080', '1280x720', '640x480']);
+  assert.equal(cams[1].id, '1');
+  assert.deepEqual(cams[1].sizes, ['4128x3096', '1920x1080', '1280x720']);
+});
+
+test('parseScrcpyCameraSizes: returns empty on bad input', () => {
+  assert.deepEqual(parseScrcpyCameraSizes(''), []);
+  assert.deepEqual(parseScrcpyCameraSizes(null), []);
+  assert.deepEqual(parseScrcpyCameraSizes('no cameras'), []);
+});
+
+test('parseScrcpyCameraSizes: handles camera with no sizes listed', () => {
+  const out = '    --camera-id=0    (back, 4000x3000, fps=[15, 30])';
+  const cams = parseScrcpyCameraSizes(out);
+  assert.equal(cams.length, 1);
+  assert.equal(cams[0].id, '0');
+  assert.deepEqual(cams[0].sizes, []);
+});
+
+// ─── computeAspectRatio ───────────────────────────────────────────────────────
+test('computeAspectRatio: reduces common resolutions', () => {
+  assert.equal(computeAspectRatio('1920x1080'), '16:9');
+  assert.equal(computeAspectRatio('1280x720'), '16:9');
+  assert.equal(computeAspectRatio('854x480'), '427:240'); // 854/2=427, 480/2=240
+  assert.equal(computeAspectRatio('640x360'), '16:9');
+  assert.equal(computeAspectRatio('1080x1920'), '9:16');
+  assert.equal(computeAspectRatio('720x1280'), '9:16');
+  assert.equal(computeAspectRatio('1080x1080'), '1:1');
+  assert.equal(computeAspectRatio('720x720'), '1:1');
+  assert.equal(computeAspectRatio('640x480'), '4:3');
+});
+
+test('computeAspectRatio: returns null on invalid input', () => {
+  assert.equal(computeAspectRatio(''), null);
+  assert.equal(computeAspectRatio(null), null);
+  assert.equal(computeAspectRatio('abc'), null);
+  assert.equal(computeAspectRatio('0x0'), null);
+});
+
 // ─── slotLabel ─────────────────────────────────────────────────────────────────
 test('slotLabel: slot 0 is "MultiCam", others are 1-indexed', () => {
   assert.equal(slotLabel(0), 'MultiCam');
@@ -137,9 +199,10 @@ test('isValidWindowTitle: safe charset only', () => {
   assert.ok(!isValidWindowTitle('"; quote'));
 });
 
-test('isValidResolution: WxH digits only', () => {
+test('isValidResolution: WxH digits only, "auto" accepted', () => {
   assert.ok(isValidResolution('1280x720'));
   assert.ok(isValidResolution('1920x1080'));
+  assert.ok(isValidResolution('auto'));
   assert.ok(!isValidResolution('1280X720')); // capital X not allowed
   assert.ok(!isValidResolution('abcxdef'));
   assert.ok(!isValidResolution(''));
@@ -174,16 +237,32 @@ test('buildScrcpyArgs: uses --max-size when useMaxSize fallback is set', () => {
   assert.ok(!args.some(a => a.startsWith('--camera-size')), 'should NOT include --camera-size');
 });
 
+test('buildScrcpyArgs: includes --camera-ar when aspectRatio is provided with --max-size', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: null, useMaxSize: true, maxDim: 1280, aspectRatio: '16:9' });
+  assert.ok(args.includes('--max-size=1280'), 'should include --max-size=1280');
+  assert.ok(args.includes('--camera-ar=16:9'), 'should include --camera-ar=16:9');
+});
+
+test('buildScrcpyArgs: omits --camera-ar when no aspectRatio provided', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, resolution: null, useMaxSize: true, maxDim: 1280 });
+  assert.ok(!args.some(a => a.startsWith('--camera-ar')), 'should NOT include --camera-ar when not provided');
+});
+
 test('buildScrcpyArgs: portrait resolution passed as --camera-size', () => {
   const args = buildScrcpyArgs({ ...baseArgs, resolution: '1080x1920', useMaxSize: false, maxDim: 1080 });
   assert.ok(args.includes('--camera-size=1080x1920'), 'should include portrait --camera-size');
 });
 
-test('buildScrcpyArgs: includes fps and core flags', () => {
+test('buildScrcpyArgs: includes core flags, omits --camera-fps at Android default 30', () => {
   const args = buildScrcpyArgs({ ...baseArgs, resolution: '1280x720', useMaxSize: false, maxDim: 1280 });
   assert.ok(args.includes('-s'), 'should include serial flag');
   assert.ok(args.includes('--video-source=camera'));
   assert.ok(args.includes('--camera-id=0'));
-  assert.ok(args.includes('--camera-fps=30'));
+  assert.ok(!args.some(a => a.startsWith('--camera-fps')), 'should NOT include --camera-fps at default 30');
   assert.ok(args.includes('--window-borderless'));
+});
+
+test('buildScrcpyArgs: includes --camera-fps for non-default frame rates', () => {
+  const args = buildScrcpyArgs({ ...baseArgs, fps: 60, resolution: '1280x720', useMaxSize: false, maxDim: 1280 });
+  assert.ok(args.includes('--camera-fps=60'), 'should include --camera-fps=60 for non-default fps');
 });

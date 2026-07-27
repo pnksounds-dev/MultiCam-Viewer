@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const {
   parseAdbDevices,
   parseScrcpyCameras,
+  parseScrcpyCameraSizes,
+  computeAspectRatio,
   clampInt,
   isValidSerial,
   isValidCameraId,
@@ -35,8 +37,15 @@ const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 const DEFAULT_SETTINGS = {
   showSplash: true,
-  resolution: '1280x720',
+  resolution: 'auto',
   lastDeviceIndex: '',
+  // Map of phone serial → last-used camera id (e.g. "0" for back, "1" for
+  // front). Restored on the next source refresh so each phone defaults to the
+  // camera the user last selected, instead of always the first one.
+  lastCameraBySerial: {},
+  // Map of phone serial → last-used resolution (e.g. "1280x720"). Restored
+  // when a phone is selected so each phone remembers its own resolution.
+  lastResolutionBySerial: {},
   greenscreenEnabled: false,
   bgColor: '#00ff00',
   exposure: 0,
@@ -241,12 +250,26 @@ async function listPhones() {
 }
 
 // ─── scrcpy: list cameras for a device ────────────────────────────────────────
+// Uses --list-camera-sizes (not --list-cameras) so we get each camera's full
+// list of supported capture sizes. This lets the renderer filter the resolution
+// dropdown to only sizes the phone's camera actually supports, preventing
+// crashes on devices that can't handle certain exact resolutions.
 async function listCameras(serial) {
   try {
     // scrcpy prints camera list to stderr and exits non-zero but still emits
     // useful output — execFileAsyncSafe surfaces that output as success.
-    const out = await execFileAsyncSafe(SCRCPY(), ['-s', serial, '--list-cameras'], 20000, true);
-    return { ok: true, cameras: parseScrcpyCameras(out) };
+    const out = await execFileAsyncSafe(SCRCPY(), ['-s', serial, '--list-camera-sizes'], 20000, true);
+    const cameras = parseScrcpyCameraSizes(out);
+    // Fallback: if --list-camera-sizes produced no sizes (older scrcpy or
+    // device quirk), try --list-cameras which at least gives id/facing/maxRes.
+    if (!cameras.length || cameras.every(c => !c.sizes.length)) {
+      const plain = parseScrcpyCameras(out);
+      // Merge: keep sizes if we got them, but ensure we have id/facing/maxRes
+      if (plain.length > cameras.length) {
+        return { ok: true, cameras: plain };
+      }
+    }
+    return { ok: true, cameras };
   } catch (err) {
     return { ok: false, error: String(err.message || err), cameras: [] };
   }
@@ -309,7 +332,11 @@ function startScrcpyCamera({ serial, cameraId, resolution, fps, windowTitle, bou
 
   // Use the selected resolution's aspect ratio for the scrcpy capture window
   // so the camera feed is not cropped to the main window's aspect ratio.
-  const [resW, resH] = (resolution || '1280x720').split('x').map(Number);
+  // "auto" (or missing) defaults to 1080p — the renderer normally resolves
+  // "auto" to the camera's best supported size before calling, but this is a
+  // safety net for direct IPC calls.
+  const effResolution = (resolution && resolution !== 'auto') ? resolution : '1920x1080';
+  const [resW, resH] = effResolution.split('x').map(Number);
   let winW = resW;
   let winH = resH;
   // Cap the capture window to a reasonable off-screen size while keeping ratio.
@@ -321,7 +348,8 @@ function startScrcpyCamera({ serial, cameraId, resolution, fps, windowTitle, bou
   winW = Math.max(winW, 320);
   winH = Math.max(winH, 320);
 
-  // maxDim is the fallback value for --max-size if --camera-size fails.
+  // maxDim is the upper bound passed to --max-size. scrcpy picks the largest
+  // supported camera size where both width and height ≤ maxDim.
   const maxDim = Math.max(resW, resH);
 
   // Position the scrcpy capture window off-screen so the user only sees the
@@ -331,16 +359,27 @@ function startScrcpyCamera({ serial, cameraId, resolution, fps, windowTitle, bou
   const offX = -10000;
   const offY = -10000;
 
+  // Always use --max-size (never --camera-size). Forcing an exact --camera-size
+  // on a device whose camera HAL doesn't support that exact resolution crashes
+  // the camera2 service hard — on budget Android 14 devices (e.g. Moto E15)
+  // this takes down System UI and requires physically unplugging the phone.
+  // --max-size lets scrcpy query the camera's supported sizes and pick the
+  // largest one within the limit, which is safe on every device.
+  //
+  // --camera-ar pins the aspect ratio so --max-size doesn't default to 4:3
+  // (which happens because 4:3 sizes often have the largest pixel count within
+  // the bound). This restores the 16:9 widescreen output the user expects.
+  const aspectRatio = computeAspectRatio(effResolution);
   const args = buildScrcpyArgs({
-    serial, cameraId, resolution, fps, windowTitle,
+    serial, cameraId, resolution: null, fps, windowTitle,
     winW, winH, offX, offY,
-    useMaxSize: false, maxDim,
+    useMaxSize: true, maxDim, aspectRatio,
   });
 
   try {
     const proc = spawn(SCRCPY(), args, { windowsHide: false });
     const startTime = Date.now();
-    scrcpyProcs.set(windowTitle, { proc, serial, resolution, maxDim, usedFallback: false, startTime });
+    scrcpyProcs.set(windowTitle, { proc, serial, resolution: null, maxDim, usedFallback: true, startTime });
 
     let outBuf = '';
     const onData = (d) => {
@@ -355,39 +394,7 @@ function startScrcpyCamera({ serial, cameraId, resolution, fps, windowTitle, bou
     proc.stderr.on('data', onData);
 
     proc.on('exit', (code) => {
-      const entry = scrcpyProcs.get(windowTitle);
       scrcpyProcs.delete(windowTitle);
-
-      // Fallback: if scrcpy exits with an error within 5 seconds of start AND
-      // we used --camera-size (not already a fallback), retry once with
-      // --max-size so the camera still starts at a supported size.
-      if (code !== 0 && entry && !entry.usedFallback && entry.resolution &&
-          (Date.now() - entry.startTime) < 5000) {
-        logToFile(`Camera size ${entry.resolution} not supported, falling back to --max-size=${entry.maxDim}`);
-        const fallbackArgs = buildScrcpyArgs({
-          serial, cameraId, resolution: null, fps, windowTitle,
-          winW, winH, offX, offY,
-          useMaxSize: true, maxDim: entry.maxDim,
-        });
-        try {
-          const fbProc = spawn(SCRCPY(), fallbackArgs, { windowsHide: false });
-          scrcpyProcs.set(windowTitle, { proc: fbProc, serial, resolution: null, maxDim: entry.maxDim, usedFallback: true, startTime: Date.now() });
-          fbProc.stdout.on('data', onData);
-          fbProc.stderr.on('data', onData);
-          fbProc.on('exit', (fbCode) => {
-            scrcpyProcs.delete(windowTitle);
-            for (const w of windows) {
-              if (!w.isDestroyed()) {
-                w.webContents.send('scrcpy-exited', { windowTitle, code: fbCode, stderr: outBuf.slice(-600) });
-              }
-            }
-          });
-          return; // Don't send the exit event — the fallback proc is now running
-        } catch (retryErr) {
-          // Fallback spawn failed — fall through to report the original error
-        }
-      }
-
       for (const w of windows) {
         if (!w.isDestroyed()) {
           w.webContents.send('scrcpy-exited', { windowTitle, code, stderr: outBuf.slice(-600) });
