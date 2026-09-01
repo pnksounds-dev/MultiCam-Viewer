@@ -36,6 +36,7 @@ const btnNewSeparate     = document.getElementById('btn-new-separate');
 const btnRotate          = document.getElementById('btn-rotate');
 const btnFlipCamera      = document.getElementById('btn-flip-camera');
 const btnRefresh         = document.getElementById('btn-refresh');
+const btnShowAllCams     = document.getElementById('btn-show-all-cams');
 const btnSettings        = document.getElementById('btn-settings');
 const settingsOverlay    = document.getElementById('settings-overlay');
 const btnCloseSettings   = document.getElementById('btn-close-settings');
@@ -112,6 +113,36 @@ const settingsPreviewCtx = settingsPreviewCanvas
   : null;
 let settingsPreviewRaf = null;
 
+// ─── Avatar face overlay DOM refs ─────────────────────────────────────────────
+const btnAvatar          = document.getElementById('btn-avatar');
+const avatarBtnLabel     = document.getElementById('avatar-btn-label');
+const avatarBadge        = document.getElementById('avatar-badge');
+const settingAvatarEnabled = document.getElementById('setting-avatar-enabled');
+const avatarDefaultPreviewWrap = document.getElementById('avatar-default-preview-wrap');
+const avatarDefaultPreview = document.getElementById('avatar-default-preview');
+const avatarPremiumControls = document.getElementById('avatar-premium-controls');
+const settingAvatarOverlayMode = document.getElementById('setting-avatar-overlay-mode');
+const settingAvatarScale = document.getElementById('setting-avatar-scale');
+const settingAvatarScaleVal = document.getElementById('setting-avatar-scale-val');
+const settingAvatarSensitivity = document.getElementById('setting-avatar-sensitivity');
+const settingAvatarSensitivityVal = document.getElementById('setting-avatar-sensitivity-val');
+const avatarExpressionInputs = {
+  neutral: document.getElementById('avatar-expression-neutral'),
+  blink: document.getElementById('avatar-expression-blink'),
+  happy: document.getElementById('avatar-expression-happy'),
+  'mouth-open': document.getElementById('avatar-expression-mouth-open'),
+  'brows-up': document.getElementById('avatar-expression-brows-up'),
+  shocked: document.getElementById('avatar-expression-shocked'),
+};
+const avatarPreviewImgs = {
+  neutral: document.getElementById('avatar-preview-neutral'),
+  blink: document.getElementById('avatar-preview-blink'),
+  happy: document.getElementById('avatar-preview-happy'),
+  'mouth-open': document.getElementById('avatar-preview-mouth-open'),
+  'brows-up': document.getElementById('avatar-preview-brows-up'),
+  shocked: document.getElementById('avatar-preview-shocked'),
+};
+
 // ─── State ────────────────────────────────────────────────────────────────────
 let currentStream    = null;
 let vcamSlot         = 0;
@@ -121,13 +152,19 @@ let lastFpsTime      = Date.now();
 let frameHandle      = null;    // id from requestVideoFrameCallback or requestAnimationFrame
 let vcamCtx          = null;
 let cameraRotation   = 0;        // user-facing rotation (rotate button cycles 0→90→180→270)
+// Active source kind drives canvas orientation correction. Phone scrcpy capture
+// needs a 180° canvas offset (raw sensor vs <video> metadata). Real UVC/webcams
+// do not — applying the phone offset would flip laptop/USB cameras upside-down.
+let activeSourceKind = null; // 'phone' | 'uvc' | null
 // The browser's <video> element applies the stream's orientation metadata
 // automatically, so it displays correctly. But canvas.drawImage() does NOT
 // apply that metadata — it draws raw sensor pixels, which for phone cameras
 // are upside-down relative to the <video> view. This offset is added to
 // cameraRotation only for the canvas draw path so the vcam/output matches the
 // <video> preview without flipping the preview itself.
-const CANVAS_ROTATION_OFFSET = 180;
+function getCanvasRotationOffset() {
+  return activeSourceKind === 'phone' ? 180 : 0;
+}
 
 // ─── Phase 1 frame-pipeline instrumentation ───────────────────────────────────
 // Prefer requestVideoFrameCallback so we only do a GPU readback + IPC send when
@@ -237,6 +274,43 @@ let gsExposureValue    = 0;
 let gsContrastValue    = 0;
 let gsSaturationValue  = 0;
 
+// ─── Avatar face overlay state ────────────────────────────────────────────────
+let avatarEnabled      = false;
+let avatarOverlayMode  = 'replace-face'; // 'replace-face' | 'art-only'
+let avatarScale        = 100;            // percent scale relative to detected face
+let avatarSensitivity  = 50;             // 0-100 expression detection sensitivity
+let faceMesh           = null;           // MediaPipe FaceMesh instance
+let faceMeshReady      = false;          // true when FaceMesh is initialized
+let isFaceMeshInferencing = false;       // backpressure flag for async inference
+let currentExpression  = 'neutral';      // last detected expression name
+// Map of expression name -> { path: string }. Custom images are saved to userData
+// and reloaded on startup; missing entries fall back to defaults.
+let avatarExpressions  = {};
+// Runtime cache of loaded custom expression Image objects (not persisted).
+let avatarCustomImages = {};
+
+// MediaPipe Face Mesh landmark indices for expression geometry.
+// EAR = eye aspect ratio, MAR = mouth aspect ratio.
+const EYE_LEFT  = [33, 160, 158, 133, 153, 144];
+const EYE_RIGHT = [362, 385, 387, 263, 373, 380];
+const MOUTH_OUTER = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291];
+const MOUTH_HEIGHT = [13, 14];
+const MOUTH_LEFT = 61, MOUTH_RIGHT = 291;
+const BROW_LEFT_OUTER = 70, BROW_LEFT_INNER = 105;
+const BROW_RIGHT_OUTER = 300, BROW_RIGHT_INNER = 334;
+const NOSE_TIP = 4, CHIN = 152;
+
+// Built-in default avatar expression assets. Free users always use these;
+// premium users can override by uploading custom art per expression.
+const DEFAULT_AVATAR_EXPRESSIONS = {
+  neutral: 'assets/avatar/neutral.svg',
+  blink: 'assets/avatar/blink.svg',
+  happy: 'assets/avatar/happy.svg',
+  'mouth-open': 'assets/avatar/mouth-open.svg',
+  'brows-up': 'assets/avatar/brows-up.svg',
+  shocked: 'assets/avatar/shocked.svg',
+};
+
 // ─── Video adjustment API ─────────────────────────────────────────────────────
 function setVideoAdjustment(name, value) {
   const val = parseInt(value, 10);
@@ -275,6 +349,18 @@ function applySettings(settings) {
     updateGreenscreenUI();
     initSegmentation();
   }
+  // Avatar and green screen are mutually exclusive for the first implementation.
+  if (avatarEnabled && greenscreenEnabled) {
+    if (settings.avatarEnabled && settings.greenscreenEnabled) {
+      // Both were saved as true — green screen wins as the more mature feature.
+      avatarEnabled = false;
+    } else if (settings.avatarEnabled) {
+      greenscreenEnabled = false;
+      updateGreenscreenUI();
+    } else {
+      avatarEnabled = false;
+    }
+  }
   if (settings.bgColor) {
     bgColorValue = settings.bgColor;
     bgColorInput.value = settings.bgColor;
@@ -302,6 +388,20 @@ function applySettings(settings) {
     activeHotkeys = { ...DEFAULT_HOTKEYS };
     saveSettingsDebounced({ hotkeys: activeHotkeys });
   }
+  // Avatar face overlay settings.
+  if (typeof settings.avatarEnabled === 'boolean') {
+    avatarEnabled = settings.avatarEnabled;
+  }
+  if (settings.avatarOverlayMode) avatarOverlayMode = settings.avatarOverlayMode;
+  if (typeof settings.avatarScale === 'number') avatarScale = settings.avatarScale;
+  if (typeof settings.avatarSensitivity === 'number') avatarSensitivity = settings.avatarSensitivity;
+  if (settings.avatarExpressions && typeof settings.avatarExpressions === 'object') {
+    avatarExpressions = { ...settings.avatarExpressions };
+  }
+  // Preload any custom premium expression images and start FaceMesh if needed.
+  if (isPremium()) loadCustomAvatarImages();
+  if (avatarEnabled) initFaceMesh();
+  updateAvatarUI();
 }
 
 // Swap the header wordmark logo for a light-mode variant when the light theme
@@ -482,6 +582,9 @@ function populateResolutionOptions(opt) {
       const detected = detectBestResolution(cam);
       autoLabel = `Auto (${detected.replace('x', '×')})`;
     }
+  } else if (opt && opt.kind === 'uvc') {
+    // UVC auto targets 1080p; the browser negotiates the closest supported size.
+    autoLabel = 'Auto (1080p ideal)';
   }
   const autoOption = document.createElement('option');
   autoOption.value = AUTO_RES_VALUE;
@@ -629,6 +732,10 @@ function isVirtualOutputOnly(label) {
 let refreshSourcesRunning = false;
 let refreshSourcesQueued   = false;
 let deviceLabelsObtained   = false; // true after the first successful getUserMedia probe
+// When false, virtual camera outputs (OBS, Snap Camera, etc.) are filtered out
+// so only real phones and USB/built-in webcams appear in the dropdown.
+// Toggle via the eye button in the toolbar to expose every videoinput device.
+let showAllCameras         = false;
 
 // Debounced wrapper used by the devicechange listener and retry timer.
 let refreshSourcesTimer = null;
@@ -661,7 +768,9 @@ async function refreshSources() {
 }
 
 async function _refreshSourcesInner() {
-  statusText.textContent = 'Scanning for phones…';
+  // Scan both Android phones (ADB/scrcpy) and local UVC/webcams so the
+  // dropdown can offer laptop cams, USB webcams, and capture cards too.
+  statusText.textContent = 'Scanning for cameras…';
   sourceOptions = [];
 
   // 1) Phones over USB (ADB)
@@ -704,8 +813,49 @@ async function _refreshSourcesInner() {
       model: ph.model,
       cameras: cams,          // [{ id, facing, maxRes }, ...]
       currentCamIndex: initialCamIndex,  // which entry in `cameras` is active
-      label: ph.model || ph.serial || 'Phone Camera',
+      label: '📱 ' + (ph.model || ph.serial || 'Phone Camera'),
     });
+  }
+
+  // 2) Local UVC / built-in / USB webcams via WebMediaDevices
+  // Windows often returns blank labels until camera permission has been
+  // granted once. Probe briefly with getUserMedia when labels are missing,
+  // then re-enumerate. Filter out our own MultiCam virtual outputs and other
+  // virtual cams so users don't pick a feedback loop.
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      let devices = await navigator.mediaDevices.enumerateDevices();
+      let videoInputs = devices.filter(d => d.kind === 'videoinput');
+      const needsLabelProbe = videoInputs.some(d => !d.label) && !deviceLabelsObtained;
+      if (needsLabelProbe) {
+        try {
+          // Short-lived permission probe so device labels populate on Windows.
+          const probe = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+          probe.getTracks().forEach(t => t.stop());
+          deviceLabelsObtained = true;
+          devices = await navigator.mediaDevices.enumerateDevices();
+          videoInputs = devices.filter(d => d.kind === 'videoinput');
+        } catch (probeErr) {
+          // Permission denied or no camera — still list unlabeled devices if any.
+          console.warn('Webcam label probe failed:', probeErr.message || probeErr);
+        }
+      } else if (videoInputs.some(d => d.label)) {
+        deviceLabelsObtained = true;
+      }
+
+      for (const d of videoInputs) {
+        const label = (d.label || '').trim() || `Camera ${d.deviceId.slice(0, 8)}`;
+        // Filter out virtual output devices unless the user toggled "show all".
+        if (!showAllCameras && isVirtualOutputOnly(label)) continue;
+        sourceOptions.push({
+          kind: 'uvc',
+          deviceId: d.deviceId,
+          label: '🎥 ' + label,
+        });
+      }
+    }
+  } catch (uvcErr) {
+    console.warn('UVC enumeration failed:', uvcErr.message || uvcErr);
   }
 
   // Rebuild main camera dropdown
@@ -730,12 +880,16 @@ async function _refreshSourcesInner() {
       statusText.textContent = adbIssues[0].message;
       showConnectionGuide();
     } else {
-      statusText.textContent = 'No phone found — see guide below';
+      statusText.textContent = 'No cameras found — see guide below';
       showConnectionGuide();
     }
   } else {
-    const nPhones = sourceOptions.length;
-    const countMsg = `${nPhones} phone camera${nPhones > 1 ? 's' : ''} ready`;
+    const nPhones = sourceOptions.filter(s => s.kind === 'phone').length;
+    const nUvc = sourceOptions.filter(s => s.kind === 'uvc').length;
+    const parts = [];
+    if (nPhones) parts.push(`${nPhones} phone${nPhones > 1 ? 's' : ''}`);
+    if (nUvc) parts.push(`${nUvc} webcam${nUvc > 1 ? 's' : ''}`);
+    const countMsg = parts.length ? `${parts.join(' · ')} ready` : `${sourceOptions.length} camera(s) ready`;
     statusText.textContent = adbIssues.length
       ? `${countMsg} · ${adbIssues[0].message}`
       : countMsg;
@@ -779,6 +933,8 @@ async function startSelected() {
 // `opt.cameras[opt.currentCamIndex]`.  The flip button mutates currentCamIndex
 // and re-enters here to restart scrcpy with the other camera.
 async function startPhoneCamera(opt) {
+  // Mark source kind so canvas draw path applies the phone sensor offset.
+  activeSourceKind = 'phone';
   const cam = opt.cameras[opt.currentCamIndex] || opt.cameras[0];
   // Remember the camera being used for this phone so it's restored on the
   // next launch / source refresh.
@@ -867,8 +1023,10 @@ async function waitForCaptureWindow(title, timeoutMs) {
   return null;
 }
 
-// ── Real UVC camera via getUserMedia ──
+// ── Real UVC / built-in / USB webcam via getUserMedia ──
 async function startUvcCamera(opt) {
+  // No phone sensor offset for real webcams — keep canvas upright.
+  activeSourceKind = 'uvc';
   activeScrcpyTitle = null;
   // "auto" for UVC cameras means 1080p (getUserMedia uses ideal constraints,
   // so the browser will negotiate the closest supported size).
@@ -885,8 +1043,10 @@ async function startUvcCamera(opt) {
         frameRate: { ideal: 60, max: 60 },
       },
     });
-    attachStream(opt.label.replace(/^­ƒÄÑ\s*/, ''));
+    // Strip leading emoji prefix from dropdown labels for the status line.
+    attachStream(String(opt.label || 'Webcam').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, ''));
   } catch (err) {
+    activeSourceKind = null;
     statusText.textContent = 'Error: ' + err.message +
       (err.name === 'NotAllowedError' ? ' — check Windows Camera privacy settings' : '');
   }
@@ -911,7 +1071,7 @@ function applyVideoRotation() {
     const scale = (cw && ch) ? Math.max(cw / vh, ch / vw) : 1;
     cameraVideo.style.transform = `rotate(${deg}deg) scale(${scale.toFixed(3)})`;
   }
-  // The vcam canvas pixels include CANVAS_ROTATION_OFFSET (for correct output),
+  // The vcam canvas pixels include getCanvasRotationOffset() (for correct output),
   // but when displayed as the greenscreen preview the canvas needs a CSS
   // counter-rotation so the preview matches the <video> element's orientation.
   // captureStream()/getImageData() read raw pixels, so the output is unaffected.
@@ -922,7 +1082,7 @@ function applyVideoRotation() {
 // The canvas pixels are rotated by (cameraRotation + OFFSET) for correct output;
 // the CSS removes the OFFSET portion for display only.
 function applyCanvasCounterRotation() {
-  const deg = (CANVAS_ROTATION_OFFSET) % 360;
+  const deg = (getCanvasRotationOffset()) % 360;
   if (deg === 0) {
     vcamCanvas.style.transform = '';
     return;
@@ -972,6 +1132,8 @@ async function stopCamera() {
     await window.electronAPI.stopScrcpy(activeScrcpyTitle);
     activeScrcpyTitle = null;
   }
+  // Clear source kind so the next start applies the correct canvas offset.
+  activeSourceKind = null;
   cameraVideo.srcObject = null;
   cameraVideo.classList.remove('active');
   cameraVideo.style.transform = '';
@@ -1154,6 +1316,7 @@ async function startSecondaryPhoneCamera(pane, opt) {
   }
 }
 
+// Secondary pane UVC path — same getUserMedia constraints as the main pane.
 async function startSecondaryUvcCamera(pane, opt) {
   const resVal = resSelect.value || AUTO_RES_VALUE;
   const [w, h] = (resVal === AUTO_RES_VALUE ? '1920x1080' : resVal).split('x').map(Number);
@@ -1168,8 +1331,10 @@ async function startSecondaryUvcCamera(pane, opt) {
       },
     });
     pane.video.srcObject = pane.stream;
+    statusText.textContent = `Camera pane live: ${String(opt.label || 'Webcam').replace(/^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '')}`;
   } catch (err) {
-    statusText.textContent = `Camera ${pane.id} error: ` + err.message;
+    statusText.textContent = `Camera ${pane.id} error: ` + err.message +
+      (err.name === 'NotAllowedError' ? ' — check Windows Camera privacy settings' : '');
   }
 }
 
@@ -1198,7 +1363,7 @@ function isPremium() {
 function updatePremiumUI() {
   if (!premiumStatusText) return;
   if (isPremium()) {
-    let label = 'Premium active: up to 4 cameras';
+    let label = 'Premium active: up to 4 cameras, avatar face overlay, custom art';
     if (forumPremiumSource === 'stripe') {
       label += ' (subscription)';
     } else if (forumPremiumSource === 'admin') {
@@ -1207,7 +1372,7 @@ function updatePremiumUI() {
     premiumStatusText.textContent = label;
     premiumStatusText.style.color = 'var(--green)';
   } else {
-    premiumStatusText.textContent = 'Free plan: up to 2 cameras';
+    premiumStatusText.textContent = 'Free plan: up to 2 cameras, default avatar only';
     premiumStatusText.style.color = 'var(--text-muted)';
   }
   updatePremiumGating();
@@ -1319,6 +1484,10 @@ async function checkForumPremium(sessionUser) {
     if (!wasPremium && isPremium() && greenscreenEnabled) {
       initSegmentation();
     }
+    if (!wasPremium && isPremium() && avatarEnabled) {
+      initFaceMesh();
+      loadCustomAvatarImages();
+    }
     return;
   }
 
@@ -1345,6 +1514,10 @@ async function checkForumPremium(sessionUser) {
     // If premium was just granted via forum, make sure greenscreen can be used.
     if (!wasPremium && isPremium() && greenscreenEnabled) {
       initSegmentation();
+    }
+    if (!wasPremium && isPremium() && avatarEnabled) {
+      initFaceMesh();
+      loadCustomAvatarImages();
     }
   } catch (err) {
     console.warn('[forum] premium check failed:', err);
@@ -1629,7 +1802,7 @@ async function startVcamOutput() {
   // For 90°/270° effective canvas rotations, the output canvas dimensions are
   // swapped so the rotated frame fills the canvas without cropping. Uses the
   // effective rotation (cameraRotation + offset) since that's what drawVideoRotated applies.
-  const effRot = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
+  const effRot = (cameraRotation + getCanvasRotationOffset()) % 360;
   const rotated = (effRot === 90 || effRot === 270);
   const w = rotated ? vh : vw;
   const h = rotated ? vw : vh;
@@ -1637,15 +1810,15 @@ async function startVcamOutput() {
   vcamCanvas.width = w; vcamCanvas.height = h;
 
   // Phase 2: prefer the WebGL2 GPU compositor for the raw path when enabled.
-  // Greenscreen still composites on the 2D canvas, so don't create the GL
-  // compositor when greenscreen is active — startFrameLoop will acquire a 2D
+  // Greenscreen and avatar both composite on the 2D canvas, so don't create the GL
+  // compositor when either is active — startFrameLoop will acquire a 2D
   // context instead. tryCreateGlCompositor returns null if WebGL2 is missing,
   // in which case we fall back to the 2D canvas path.
   // Also bypass the GL compositor when the effective canvas rotation is non-zero
   // — the 2D path handles rotation via drawVideoRotated(); adding rotation to
   // the shader is not worth the complexity for a user-applied effect.
-  const effRotZero = ((cameraRotation + CANVAS_ROTATION_OFFSET) % 360) === 0;
-  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled && effRotZero) {
+  const effRotZero = ((cameraRotation + getCanvasRotationOffset()) % 360) === 0;
+  if (USE_WEBGL_COMPOSITOR && !greenscreenEnabled && !avatarEnabled && effRotZero) {
     glCompositor = tryCreateGlCompositor(vcamCanvas, w, h);
   } else {
     glCompositor = null;
@@ -1695,7 +1868,13 @@ async function startVcamOutput() {
 
 function startFrameLoop(w, h) {
   cancelFrame();
-  if (greenscreenEnabled && segmentationReady) {
+  if (avatarEnabled && faceMeshReady) {
+    // Avatar face overlay draws on the 2D canvas. Disable the GL compositor
+    // while it is active; the avatar is composited in 2D.
+    if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
+    if (!vcamCtx) vcamCtx = vcamCanvas.getContext('2d', { willReadFrequently: true });
+    startAvatarLoop(w, h);
+  } else if (greenscreenEnabled && segmentationReady) {
     // Greenscreen composites on the 2D canvas. If the GL compositor was active
     // for the raw path, release it and acquire a 2D context for segmentation.
     if (glCompositor) { glCompositor.dispose(); glCompositor = null; }
@@ -1840,12 +2019,12 @@ function sendFrameToVcam(width, height) {
 }
 
 // Draw a video element to a 2D canvas context with the effective canvas
-// rotation (cameraRotation + CANVAS_ROTATION_OFFSET). The offset corrects for
+// rotation (cameraRotation + getCanvasRotationOffset()). The offset corrects for
 // the phone sensor orientation that the <video> element handles automatically
 // but canvas.drawImage does not.
 // w/h are the canvas dimensions (already swapped for 90/270 in startVcamOutput).
 function drawVideoRotated(ctx, video, w, h) {
-  const deg = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
+  const deg = (cameraRotation + getCanvasRotationOffset()) % 360;
   if (deg === 0) {
     ctx.drawImage(video, 0, 0, w, h);
     return;
@@ -1958,7 +2137,7 @@ function onSegmentationResults(results) {
   // The image is contain-fitted (entire image visible, centered, no cropping)
   // and the background color fills any gaps so there are no transparent areas.
   vcamCtx.globalCompositeOperation = 'destination-over';
-  const bgDeg = (cameraRotation + CANVAS_ROTATION_OFFSET) % 360;
+  const bgDeg = (cameraRotation + getCanvasRotationOffset()) % 360;
   vcamCtx.save();
   if (bgDeg !== 0) {
     vcamCtx.translate(w / 2, h / 2);
@@ -2015,6 +2194,311 @@ function drawContainImage(ctx, img, w, h) {
   ctx.drawImage(img, offX, offY, drawW, drawH);
 }
 
+// ─── Avatar face overlay helpers ──────────────────────────────────────────────
+function euclidean(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function eyeAspectRatio(landmarks, indices) {
+  const p = indices.map(i => landmarks[i]);
+  const horizontal = euclidean(p[0], p[3]) || 1e-6;
+  const vertical1 = euclidean(p[1], p[5]);
+  const vertical2 = euclidean(p[2], p[4]);
+  return (vertical1 + vertical2) / (2 * horizontal);
+}
+
+function mouthAspectRatio(landmarks) {
+  const top = landmarks[MOUTH_HEIGHT[0]];
+  const bottom = landmarks[MOUTH_HEIGHT[1]];
+  const left = landmarks[MOUTH_LEFT];
+  const right = landmarks[MOUTH_RIGHT];
+  const vertical = euclidean(top, bottom);
+  const horizontal = euclidean(left, right) || 1e-6;
+  return vertical / horizontal;
+}
+
+function smileRatio(landmarks) {
+  const left = landmarks[MOUTH_LEFT];
+  const right = landmarks[MOUTH_RIGHT];
+  const upperLip = landmarks[MOUTH_HEIGHT[0]];
+  const cornerY = (left.y + right.y) / 2;
+  return cornerY - upperLip.y;
+}
+
+function eyebrowRaiseAmount(landmarks) {
+  const leftBrow = landmarks[BROW_LEFT_OUTER];
+  const rightBrow = landmarks[BROW_RIGHT_OUTER];
+  const leftEye = landmarks[EYE_LEFT[0]];
+  const rightEye = landmarks[EYE_RIGHT[0]];
+  const left = leftEye.y - leftBrow.y;
+  const right = rightEye.y - rightBrow.y;
+  return (left + right) / 2;
+}
+
+function detectExpression(landmarks) {
+  const ear = (eyeAspectRatio(landmarks, EYE_LEFT) + eyeAspectRatio(landmarks, EYE_RIGHT)) / 2;
+  const mar = mouthAspectRatio(landmarks);
+  const smile = smileRatio(landmarks);
+  const browRaise = eyebrowRaiseAmount(landmarks);
+
+  // Map avatarSensitivity (0-100) to threshold adjustments.
+  // Higher sensitivity means expressions trigger more easily.
+  const sens = Math.max(0, Math.min(100, avatarSensitivity)) / 100;
+  const blinkThreshold = 0.20 - (sens * 0.08);     // 0.20 -> 0.12
+  const mouthOpenThreshold = 0.25 + (sens * 0.20); // 0.25 -> 0.45
+  const happyThreshold = 0.005 + (sens * 0.025);   // small positive smile
+  const browRaiseThreshold = 0.05 + (sens * 0.10); // 0.05 -> 0.15
+
+  const isBlink = ear < blinkThreshold;
+  const isMouthOpen = mar > mouthOpenThreshold;
+  const isHappy = smile > happyThreshold;
+  const isBrowsUp = browRaise > browRaiseThreshold;
+
+  if (isMouthOpen && isBrowsUp && !isBlink) return 'shocked';
+  if (isMouthOpen) return 'mouth-open';
+  if (isHappy) return 'happy';
+  if (isBlink) return 'blink';
+  if (isBrowsUp) return 'brows-up';
+  return 'neutral';
+}
+
+function getFaceBoundingBox(landmarks) {
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const lm of landmarks) {
+    if (lm.x < minX) minX = lm.x;
+    if (lm.x > maxX) maxX = lm.x;
+    if (lm.y < minY) minY = lm.y;
+    if (lm.y > maxY) maxY = lm.y;
+  }
+  return {
+    center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+function getAvatarImageForExpression(expr) {
+  // Premium users can override any expression with a custom upload.
+  if (isPremium() && avatarCustomImages[expr]) {
+    return avatarCustomImages[expr];
+  }
+  return DEFAULT_AVATAR_IMAGES[expr] || DEFAULT_AVATAR_IMAGES['neutral'];
+}
+
+function drawAvatarOverlay(ctx, expression, faceBox, w, h) {
+  const img = getAvatarImageForExpression(expression);
+  if (!img || !img.complete || img.naturalWidth === 0) return;
+
+  const deg = (cameraRotation + getCanvasRotationOffset()) % 360;
+  const scale = Math.max(0.5, avatarScale / 100);
+
+  // Compute destination width/height as used by drawVideoRotated for this rotation.
+  let drawW, drawH;
+  if (deg === 90 || deg === 270) {
+    drawW = h;
+    drawH = w;
+  } else {
+    drawW = w;
+    drawH = h;
+  }
+
+  // Face size in destination pixels. Use face width as the avatar base size.
+  const faceSize = faceBox.width * drawW * scale;
+
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(deg * Math.PI / 180);
+
+  // In the rotated coordinate system, the video source point (faceBox.center.x, faceBox.center.y)
+  // maps to (-drawW/2 + x * drawW, -drawH/2 + y * drawH), matching drawVideoRotated.
+  const dx = -drawW / 2 + faceBox.center.x * drawW;
+  const dy = -drawH / 2 + faceBox.center.y * drawH;
+
+  // Avatar image is drawn square; use face width as size and preserve 1:1 aspect.
+  ctx.drawImage(img, dx - faceSize / 2, dy - faceSize / 2, faceSize, faceSize);
+
+  ctx.restore();
+}
+
+function drawAvatarFrame(results) {
+  if (!vcamCtx) return;
+  const w = vcamCanvas.width;
+  const h = vcamCanvas.height;
+
+  if (avatarOverlayMode === 'art-only') {
+    // Solid green for easy OBS chroma key. User can replace with background color later.
+    vcamCtx.fillStyle = '#00ff00';
+    vcamCtx.fillRect(0, 0, w, h);
+  } else {
+    // Draw the underlying video frame, then overlay the avatar on the face.
+    setVideoFilters(vcamCtx);
+    drawVideoRotated(vcamCtx, cameraVideo, w, h);
+    vcamCtx.filter = 'none';
+  }
+
+  if (results && results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    const landmarks = results.multiFaceLandmarks[0];
+    const faceBox = getFaceBoundingBox(landmarks);
+    drawAvatarOverlay(vcamCtx, currentExpression, faceBox, w, h);
+  }
+
+  sendFrameToVcam(w, h);
+  perfFrameCount++;
+}
+
+function onFaceMeshResults(results) {
+  if (!avatarEnabled || !vcamCtx) return;
+
+  if (results && results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    const landmarks = results.multiFaceLandmarks[0];
+    currentExpression = detectExpression(landmarks);
+  } else {
+    currentExpression = 'neutral';
+  }
+
+  const w = vcamCanvas.width;
+  const h = vcamCanvas.height;
+  drawAvatarFrame(results);
+}
+
+async function initFaceMesh() {
+  if (faceMesh) return;
+  if (!window.FaceMesh) {
+    console.error('MediaPipe FaceMesh not loaded');
+    return;
+  }
+  try {
+    faceMesh = new window.FaceMesh({
+      locateFile: (file) => {
+        // Load MediaPipe assets from the bundled local copy so face tracking
+        // works offline and inside the packaged app (no CDN dependency).
+        return `vendor/mediapipe/face_mesh/${file}`;
+      }
+    });
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5,
+    });
+    faceMesh.onResults(onFaceMeshResults);
+    await faceMesh.initialize();
+    faceMeshReady = true;
+    if (avatarEnabled && currentStream) restartFrameLoop();
+  } catch (e) {
+    console.error('Failed to initialize FaceMesh:', e);
+    faceMeshReady = false;
+  }
+}
+
+function startAvatarLoop(w, h) {
+  async function loop() {
+    if (!currentStream || !vcamCtx || !avatarEnabled) return;
+    if (isFaceMeshInferencing) {
+      // Drop this frame if inference is still running to avoid stacking async calls.
+      scheduleFrame(loop, false);
+      return;
+    }
+    isFaceMeshInferencing = true;
+    try {
+      await faceMesh.send({ image: cameraVideo });
+    } catch (e) {
+      console.error('Face mesh inference error:', e);
+    }
+    isFaceMeshInferencing = false;
+    scheduleFrame(loop, false);
+  }
+  scheduleFrame(loop, false);
+}
+
+function updateAvatarUI() {
+  const hasStream = !!currentStream;
+  if (btnAvatar) btnAvatar.classList.toggle('active', avatarEnabled);
+  if (avatarBtnLabel) avatarBtnLabel.textContent = avatarEnabled ? 'Avatar On' : 'Avatar';
+  if (avatarBadge) avatarBadge.classList.toggle('hidden', !avatarEnabled);
+
+  if (avatarEnabled && hasStream) {
+    cameraVideo.classList.add('hidden');
+    vcamCanvas.classList.add('active');
+  } else if (!greenscreenEnabled) {
+    // Only restore the video preview if green screen isn't also active.
+    cameraVideo.classList.remove('hidden');
+    vcamCanvas.classList.remove('active');
+  }
+
+  if (settingAvatarEnabled) settingAvatarEnabled.checked = avatarEnabled;
+  if (settingAvatarOverlayMode) settingAvatarOverlayMode.value = avatarOverlayMode;
+  if (settingAvatarScale) {
+    settingAvatarScale.value = avatarScale;
+    if (settingAvatarScaleVal) settingAvatarScaleVal.textContent = avatarScale;
+  }
+  if (settingAvatarSensitivity) {
+    settingAvatarSensitivity.value = avatarSensitivity;
+    if (settingAvatarSensitivityVal) settingAvatarSensitivityVal.textContent = avatarSensitivity;
+  }
+
+  const premium = isPremium();
+  if (avatarPremiumControls) {
+    avatarPremiumControls.classList.toggle('hidden', !premium);
+  }
+  if (avatarDefaultPreviewWrap) {
+    avatarDefaultPreviewWrap.classList.toggle('hidden', !avatarEnabled);
+  }
+  if (avatarDefaultPreview && DEFAULT_AVATAR_IMAGES[currentExpression]) {
+    avatarDefaultPreview.src = DEFAULT_AVATAR_EXPRESSIONS[currentExpression];
+  }
+}
+
+async function toggleAvatar() {
+  // Free users can use the built-in default avatar; only custom uploads and
+  // advanced settings are premium-gated. Avatar and green screen are mutually
+  // exclusive for the first implementation to keep the frame loop simple.
+  avatarEnabled = !avatarEnabled;
+  if (avatarEnabled && greenscreenEnabled) {
+    greenscreenEnabled = false;
+    updateGreenscreenUI();
+    saveSettingsDebounced({ greenscreenEnabled });
+  }
+  updateAvatarUI();
+  const hasOutput = currentStream && (vcamCtx || glCompositor);
+  if (avatarEnabled) {
+    await initFaceMesh();
+    if (hasOutput) restartFrameLoop();
+  } else if (hasOutput) {
+    restartFrameLoop();
+  }
+  saveSettingsDebounced({ avatarEnabled });
+}
+
+// Preload the built-in default avatar expression images.
+const DEFAULT_AVATAR_IMAGES = {};
+function loadDefaultAvatarImages() {
+  for (const [expr, path] of Object.entries(DEFAULT_AVATAR_EXPRESSIONS)) {
+    const img = new Image();
+    img.onload = () => { DEFAULT_AVATAR_IMAGES[expr] = img; };
+    img.onerror = () => { console.error('Failed to load default avatar:', path); };
+    img.src = path;
+  }
+}
+loadDefaultAvatarImages();
+
+// Load custom premium expression images from saved settings.
+async function loadCustomAvatarImages() {
+  if (!isPremium()) return;
+  for (const [expr, data] of Object.entries(avatarExpressions)) {
+    if (!data || !data.path) continue;
+    try {
+      const result = await window.electronAPI.readImageFile(data.path);
+      if (!result.ok) continue;
+      const img = new Image();
+      img.onload = () => { avatarCustomImages[expr] = img; };
+      img.src = result.dataUrl;
+    } catch (e) {
+      console.error('Failed to load custom avatar image:', e);
+    }
+  }
+}
+
 function restartFrameLoop() {
   // Allow restart when either the 2D context or the GL compositor is active.
   if (!currentStream || (!vcamCtx && !glCompositor)) return;
@@ -2045,7 +2529,8 @@ function updateGreenscreenUI() {
   if (greenscreenEnabled && hasStream) {
     cameraVideo.classList.add('hidden');
     vcamCanvas.classList.add('active');
-  } else {
+  } else if (!avatarEnabled) {
+    // Only restore the video preview if avatar isn't also active.
     cameraVideo.classList.remove('hidden');
     vcamCanvas.classList.remove('active');
   }
@@ -2057,6 +2542,11 @@ async function toggleGreenscreen() {
     return;
   }
   greenscreenEnabled = !greenscreenEnabled;
+  if (greenscreenEnabled && avatarEnabled) {
+    avatarEnabled = false;
+    updateAvatarUI();
+    saveSettingsDebounced({ avatarEnabled });
+  }
   updateGreenscreenUI();
   const hasOutput = currentStream && (vcamCtx || glCompositor);
   if (greenscreenEnabled) {
@@ -2404,6 +2894,20 @@ document.addEventListener('keydown', (e) => {
 });
 
 btnRefresh.addEventListener('click', refreshSources);
+
+// Toggle between showing only real cameras (phones + USB/built-in webcams)
+// and showing every videoinput device including virtual outputs (OBS, Snap
+// Camera, etc.).  The button stays highlighted while "show all" is active.
+if (btnShowAllCams) {
+  btnShowAllCams.addEventListener('click', () => {
+    showAllCameras = !showAllCameras;
+    btnShowAllCams.classList.toggle('toggled', showAllCameras);
+    btnShowAllCams.title = showAllCameras
+      ? 'Showing all cameras — click to hide virtual cameras'
+      : 'Show all cameras including virtual (OBS, Snap Camera, etc.)';
+    refreshSources();
+  });
+}
 btnSettings.addEventListener('click', openSettings);
 btnCloseSettings.addEventListener('click', closeSettings);
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
@@ -2767,6 +3271,85 @@ if (btnVcamDiagnostics) {
     ];
     vcamDiagnosticsOutput.textContent = lines.join('\n');
   });
+}
+
+// Avatar face overlay controls
+if (btnAvatar) {
+  btnAvatar.addEventListener('click', () => {
+    toggleAvatar();
+    saveSettingsDebounced({ avatarEnabled });
+  });
+}
+
+if (settingAvatarEnabled) {
+  settingAvatarEnabled.addEventListener('change', () => {
+    if (settingAvatarEnabled.checked !== avatarEnabled) {
+      toggleAvatar();
+    }
+  });
+}
+
+if (settingAvatarOverlayMode) {
+  settingAvatarOverlayMode.addEventListener('change', (e) => {
+    avatarOverlayMode = e.target.value;
+    saveSettingsDebounced({ avatarOverlayMode });
+  });
+}
+
+function bindAvatarSlider(input, valueEl, key) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const val = parseInt(input.value, 10);
+    if (valueEl) valueEl.textContent = val;
+    if (key === 'scale') avatarScale = val;
+    if (key === 'sensitivity') avatarSensitivity = val;
+  });
+  input.addEventListener('change', () => {
+    const val = parseInt(input.value, 10);
+    if (key === 'scale') saveSettingsDebounced({ avatarScale: val });
+    if (key === 'sensitivity') saveSettingsDebounced({ avatarSensitivity: val });
+  });
+}
+bindAvatarSlider(settingAvatarScale, settingAvatarScaleVal, 'scale');
+bindAvatarSlider(settingAvatarSensitivity, settingAvatarSensitivityVal, 'sensitivity');
+
+// Custom expression image upload for premium users.
+async function handleAvatarExpressionUpload(expr, file) {
+  if (!file) return;
+  if (!isPremium()) {
+    showPremiumUpgrade('Custom avatar art is a Premium feature');
+    return;
+  }
+  const img = new Image();
+  img.onload = async () => {
+    URL.revokeObjectURL(img.src);
+    if (!window.electronAPI?.saveImageFile) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const result = await window.electronAPI.saveImageFile(dataUrl, file.name || `${expr}.png`);
+      if (!result.ok) return;
+      avatarExpressions[expr] = { path: result.path };
+      avatarCustomImages[expr] = img;
+      saveSettingsDebounced({ avatarExpressions });
+      if (avatarPreviewImgs[expr]) {
+        avatarPreviewImgs[expr].src = dataUrl;
+        avatarPreviewImgs[expr].classList.remove('hidden');
+      }
+    } catch (err) {
+      console.error('Failed to save avatar expression image:', err);
+    }
+  };
+  img.onerror = () => { console.error('Failed to load avatar expression image:', file.name); };
+  img.src = URL.createObjectURL(file);
+}
+
+for (const [expr, input] of Object.entries(avatarExpressionInputs)) {
+  if (input) {
+    input.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleAvatarExpressionUpload(expr, file);
+    });
+  }
 }
 
 // Green screen controls

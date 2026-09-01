@@ -1,5 +1,14 @@
 # MultiCamViewer — Skills & Workflow Rules
 
+## Product capabilities (keep current)
+
+- **Camera sources:** Android phones (ADB + scrcpy) **and** local UVC/USB/built-in webcams via `navigator.mediaDevices.enumerateDevices` + `getUserMedia`.
+- **Source kinds in renderer:** `phone` | `uvc`. Phone uses scrcpy + desktop capture; UVC uses deviceId constraints.
+- **Canvas rotation offset:** phone-only (`getCanvasRotationOffset()` → 180 for phone, 0 for uvc). Do not reintroduce a global 180° constant or laptop cams flip upside-down.
+- **Virtual device filter:** skip MultiCam / OBS / ManyCam-style virtual outputs when listing UVC devices to avoid feedback loops. User can toggle `showAllCameras` via the eye-icon toolbar button (`btn-show-all-cams`) to bypass the filter and list every videoinput device.
+- **Minimize to tray:** clicking minimize or the X close button hides the window to the system tray instead of quitting. Virtual camera output and scrcpy capture continue running in the background. The tray icon (right-click) provides Show and Quit options. `isQuitting` flag in main.js controls whether `close` events are intercepted or allowed through.
+- **Avatar face overlay:** optional VTuber-style face overlay using MediaPipe Face Mesh. Free users get a built-in default multi-state sprite pack (neutral, blink, mouth-open). Premium users can upload custom expression art and access all six expressions plus overlay mode, scale, and sensitivity controls.
+
 ## Planning Documentation
 
 Whenever a plan is discussed or created (whether it's a bug fix plan, feature plan, refactor plan, or any systematic multi-step plan):

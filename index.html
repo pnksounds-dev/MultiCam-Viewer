@@ -111,6 +111,19 @@
 
         <div class="toolbar-divider" aria-hidden="true"></div>
 
+        <div id="avatar-wrap" class="toolbar-avatar">
+          <button id="btn-avatar" class="toolbar-btn" title="Toggle avatar face overlay">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M4 20c0-6 6-10 8-10s8 4 8 10"/></svg>
+            <span id="avatar-btn-label">Avatar</span>
+          </button>
+          <span id="avatar-badge" class="badge hidden">Avatar</span>
+        </div>
+
+        <div class="toolbar-divider" aria-hidden="true"></div>
+
+        <button id="btn-show-all-cams" class="toolbar-btn icon-only" title="Show all cameras including virtual (OBS, Snap Camera, etc.)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/><line x1="3" y1="3" x2="21" y2="21"/></svg>
+        </button>
         <button id="btn-refresh" class="toolbar-btn icon-only" title="Refresh camera list (F5)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
         </button>
@@ -146,19 +159,30 @@
             <!-- Shown when no camera is selected or no cameras found -->
             <div id="no-camera-msg">
               <img id="no-cam-logo" src="assets/MCV-SplashScreen.png?v=3" alt="MultiCam Viewer">
-              <p id="no-cam-heading">Plug in your phone (USB debugging on), then pick it above</p>
+              <p id="no-cam-heading">Pick a phone, USB webcam, or built-in camera above</p>
 
               <!-- Connection guide — shown when 0 cameras found -->
               <div id="connection-guide" class="hidden">
-                <!-- Primary: USB debugging + scrcpy (built in) -->
+                <!-- Local webcams / USB UVC cameras -->
+                <div class="guide-panel active" id="tab-uvc">
+                  <p class="guide-title">Laptop webcam or USB camera</p>
+                  <ol class="guide-steps">
+                    <li>Plug in a <strong>USB webcam</strong> (or use the built-in laptop camera)</li>
+                    <li>Allow camera access if Windows asks (Settings → Privacy → Camera)</li>
+                    <li>Click <strong>&#8635; Refresh</strong> — webcams appear with a camera icon in the list</li>
+                    <li>Select the camera. Resolution defaults to Auto (1080p ideal)</li>
+                  </ol>
+                  <p class="guide-note">Works with most UVC webcams, capture cards that expose a DirectShow camera, and Android phones in native USB Webcam mode.</p>
+                </div>
+                <!-- Phone: USB debugging + scrcpy (built in) -->
                 <div class="guide-panel active" id="tab-usb">
-                  <p class="guide-title">Direct USB camera — no app on your phone</p>
+                  <p class="guide-title">Android phone over USB debugging</p>
                   <ol class="guide-steps">
                     <li>Connect your phone with a <strong>data USB cable</strong></li>
                     <li>Enable Developer Options: <strong>Settings → About phone → tap "Build number" 7 times</strong></li>
                     <li>Enable <strong>Settings → System → Developer Options → USB Debugging</strong></li>
                     <li>On the phone popup <em>"Allow USB debugging?"</em> → tap <strong>Allow</strong> (tick "always allow")</li>
-                    <li>Click <strong>&#8635; Refresh</strong> above — your phone appears as <em>"Phone Camera"</em></li>
+                    <li>Click <strong>&#8635; Refresh</strong> above — your phone appears with a phone icon</li>
                     <li>Select it. Use the flip button in the toolbar (or press <kbd>F</kbd>) to switch between front and back.</li>
                     <li>The first time, watch your phone for a camera permission prompt → <strong>Allow</strong></li>
                   </ol>
@@ -275,7 +299,7 @@
         </section>
 
         <section>
-          <h3>Premium <span class="help-tip" data-help="Premium unlocks up to 4 cameras, AI green screen, and video adjustments (exposure, contrast, saturation). Sign in with your PNKSOUNDS account and subscribe to unlock.">?</span></h3>
+          <h3>Premium <span class="help-tip" data-help="Premium unlocks up to 4 cameras, AI green screen, video adjustments (exposure, contrast, saturation), and custom avatar face art. Sign in with your PNKSOUNDS account and subscribe to unlock.">?</span></h3>
           <p id="premium-status-text">Free plan: up to 2 cameras</p>
           <div class="settings-button-row">
             <button id="btn-upgrade-premium" class="link-btn">Upgrade to Premium</button>
@@ -309,6 +333,73 @@
             <div id="settings-preview-frame">
               <canvas id="settings-preview-canvas"></canvas>
               <div id="settings-preview-empty" class="hidden">No camera selected</div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h3>Avatar Face</h3>
+          <label class="settings-check-wrap">
+            <input type="checkbox" id="setting-avatar-enabled">
+            <span>Enable avatar face overlay</span>
+            <span class="help-tip" data-help="Overlay a VTuber-style avatar on your face. Free users use the built-in default; Premium users can upload custom expression art.">?</span>
+          </label>
+          <div id="avatar-default-preview-wrap" class="avatar-preview-wrap hidden">
+            <span>Default avatar</span>
+            <img id="avatar-default-preview" src="assets/avatar/neutral.svg" alt="Default avatar" width="64" height="64">
+            <p class="settings-section-note">Free users: replace the SVG files in <code>assets/avatar/</code> before build. Premium users can upload custom art below.</p>
+          </div>
+          <div id="avatar-premium-controls" class="hidden">
+            <h4 class="avatar-premium-heading">Premium options <span class="pro-tag">PRO</span></h4>
+            <div class="settings-input-wrap">
+              <span>Overlay mode</span>
+              <select id="setting-avatar-overlay-mode">
+                <option value="replace-face">Replace face</option>
+                <option value="art-only">Art only</option>
+              </select>
+            </div>
+            <div class="settings-slider-wrap">
+              <label>Avatar scale</label>
+              <input type="range" id="setting-avatar-scale" min="50" max="150" value="100">
+              <span id="setting-avatar-scale-val">100</span>
+            </div>
+            <div class="settings-slider-wrap">
+              <label>Expression sensitivity</label>
+              <input type="range" id="setting-avatar-sensitivity" min="0" max="100" value="50">
+              <span id="setting-avatar-sensitivity-val">50</span>
+            </div>
+            <div class="settings-section-note">Custom expression art (PNG/SVG). Leave blank to use the built-in default for that expression.</div>
+            <div class="avatar-expression-list">
+              <label class="avatar-expression-item">
+                <span>Neutral</span>
+                <input type="file" id="avatar-expression-neutral" accept="image/*">
+                <img id="avatar-preview-neutral" class="hidden" width="40" height="40" alt="">
+              </label>
+              <label class="avatar-expression-item">
+                <span>Blink</span>
+                <input type="file" id="avatar-expression-blink" accept="image/*">
+                <img id="avatar-preview-blink" class="hidden" width="40" height="40" alt="">
+              </label>
+              <label class="avatar-expression-item">
+                <span>Happy</span>
+                <input type="file" id="avatar-expression-happy" accept="image/*">
+                <img id="avatar-preview-happy" class="hidden" width="40" height="40" alt="">
+              </label>
+              <label class="avatar-expression-item">
+                <span>Mouth open</span>
+                <input type="file" id="avatar-expression-mouth-open" accept="image/*">
+                <img id="avatar-preview-mouth-open" class="hidden" width="40" height="40" alt="">
+              </label>
+              <label class="avatar-expression-item">
+                <span>Brows up</span>
+                <input type="file" id="avatar-expression-brows-up" accept="image/*">
+                <img id="avatar-preview-brows-up" class="hidden" width="40" height="40" alt="">
+              </label>
+              <label class="avatar-expression-item">
+                <span>Shocked</span>
+                <input type="file" id="avatar-expression-shocked" accept="image/*">
+                <img id="avatar-preview-shocked" class="hidden" width="40" height="40" alt="">
+              </label>
             </div>
           </div>
         </section>
@@ -372,12 +463,16 @@
               <p>Uses <strong>USB debugging (ADB)</strong> + bundled <strong>scrcpy</strong> to pull the camera feed directly. Requires Android 12+, USB Debugging enabled, and tapping <strong>Allow</strong> on the phone prompts.</p>
             </div>
             <div class="help-block">
+              <h4>USB / Built-in Webcams <span class="help-tip" data-help="Any DirectShow/UVC camera Windows exposes as a video input can be selected, including laptop cams and most USB webcams.">?</span></h4>
+              <p>The camera dropdown also lists <strong>built-in webcams</strong>, <strong>USB webcams</strong>, and capture devices. Select one to open it with getUserMedia — no ADB required. Virtual outputs (MultiCam, OBS Virtual Camera, etc.) are filtered out to avoid feedback loops.</p>
+            </div>
+            <div class="help-block">
               <h4>OBS Setup <span class="help-tip" data-help="Window Capture needs no driver. The Virtual Camera driver is an alternative if Window Capture isn't available.">?</span></h4>
               <ol>
-                <li>Select your <strong>phone camera</strong> in the dropdown above</li>
+                <li>Select a <strong>phone or webcam</strong> in the dropdown above</li>
                 <li>In OBS: Add Source → <strong>Window Capture</strong> → select <em>"MultiCam Viewer"</em> (recommended, no driver needed)</li>
                 <li>Or register the driver above, then OBS → Add Source → <strong>Video Capture Device</strong> → device <strong>"MultiCam"</strong></li>
-                <li>Second phone: click <strong>+ New Camera</strong>, add another OBS source → <strong>"MultiCam 2"</strong></li>
+                <li>Second camera: click <strong>+ New Camera</strong>, add another OBS source → <strong>"MultiCam 2"</strong></li>
               </ol>
             </div>
             <div class="help-block">
@@ -467,6 +562,7 @@
   </div>
 
   <script src="vendor/mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <script src="vendor/mediapipe/face_mesh/face_mesh.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

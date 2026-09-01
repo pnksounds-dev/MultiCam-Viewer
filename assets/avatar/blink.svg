@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Placeholder avatar: blink expression -->
+  <!-- Replace this file in assets/avatar/ with your own PNG/SVG -->
+  <circle cx="256" cy="256" r="200" fill="#facc15" stroke="#000" stroke-width="8"/>
+  <line x1="172" y1="226" x2="220" y2="226" stroke="#000" stroke-width="12" stroke-linecap="round"/>
+  <line x1="292" y1="226" x2="340" y2="226" stroke="#000" stroke-width="12" stroke-linecap="round"/>
+  <path d="M 196 336 Q 256 366 316 336" fill="none" stroke="#000" stroke-width="12" stroke-linecap="round"/>
+</svg>

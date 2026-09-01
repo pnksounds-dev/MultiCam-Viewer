@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, desktopCapturer, session, shell, Menu, Tray, nativeImage, Notification } = require('electron');
 const path = require('path');
 const os = require('os');
 const { execFile, spawn } = require('child_process');
@@ -51,6 +51,19 @@ const DEFAULT_SETTINGS = {
   exposure: 0,
   contrast: 0,
   saturation: 0,
+  // Avatar Face feature (freemium): overlay a VTuber-style avatar on the user's face.
+  avatarEnabled: false,
+  avatarOverlayMode: 'replace-face', // 'replace-face' | 'art-only'
+  avatarScale: 100,                  // scale percent relative to detected face
+  avatarSensitivity: 50,             // expression detection sensitivity (0-100)
+  avatarExpressions: {               // map of expression name -> custom image path (premium)
+    neutral: '',
+    blink: '',
+    happy: '',
+    'mouth-open': '',
+    'brows-up': '',
+    shocked: '',
+  },
 };
 
 const LOG_FILE = path.join(app.getPath('userData'), 'app.log');
@@ -144,6 +157,9 @@ function getVcamForSlot(slot) {
 // ─── Splash Window ───────────────────────────────────────────────────────────
 let splashWindow = null;
 let isInitializing = false; // true during splash→main transition to suppress premature window-all-closed
+let tray = null;             // system-tray icon (created on app ready)
+let isQuitting = false;      // true when the user explicitly quits (tray Quit / app:quit)
+let trayNotificationShown = false; // show "minimized to tray" hint only once
 
 function createSplash() {
   logToFile('Creating splash window');
@@ -651,6 +667,76 @@ async function unregisterVcam() {
   return { success: true };
 }
 
+// ─── System Tray ─────────────────────────────────────────────────────────────
+// Minimising to tray keeps the app running in the background so virtual camera
+// output continues feeding OBS / Discord / etc. even when the window is hidden.
+function createTray() {
+  const iconPath = path.join(__dirname, 'assets', 'app icon.png');
+  let trayIcon = null;
+  if (fs.existsSync(iconPath)) {
+    // Resize to 16x16 for tray (Windows expects small icons).
+    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  }
+  if (!trayIcon || trayIcon.isEmpty()) {
+    // Fallback: create a tiny solid-color icon so the tray still works.
+    trayIcon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('MultiCam Viewer — capturing in background');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Show MultiCam',
+      click: () => restoreAllWindows(),
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        stopAllScrcpy();
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  // Single-click (or double-click on some Windows configs) restores the window.
+  tray.on('click', () => restoreAllWindows());
+}
+
+// Restore all hidden windows from the tray.
+function restoreAllWindows() {
+  for (const w of windows) {
+    if (!w.isDestroyed()) {
+      w.show();
+      w.focus();
+      // Restore from minimized state if needed.
+      if (w.isMinimized()) w.restore();
+    }
+  }
+}
+
+// Hide all windows to the tray (called when the user minimizes).
+function hideAllWindowsToTray() {
+  for (const w of windows) {
+    if (!w.isDestroyed()) w.hide();
+  }
+
+  // Show a one-time notification so the user knows the app is still running.
+  if (!trayNotificationShown && Notification.isSupported()) {
+    trayNotificationShown = true;
+    const notif = new Notification({
+      title: 'MultiCam Viewer',
+      body: 'Minimized to tray — camera output is still active. Click the tray icon to restore.',
+      silent: true,
+    });
+    notif.show();
+  }
+}
+
 // ─── Window Factory ──────────────────────────────────────────────────────────
 function createWindow(show = true) {
   logToFile('createWindow called with show=' + show);
@@ -768,6 +854,22 @@ function createWindow(show = true) {
 
   windows.add(win);
   win.on('closed', () => windows.delete(win));
+
+  // Minimize → hide to tray instead of showing a taskbar button.
+  // The virtual camera output keeps running because the renderer process
+  // and scrcpy are unaffected by window visibility.
+  win.on('minimize', () => {
+    hideAllWindowsToTray();
+  });
+
+  // Close button (X) → hide to tray unless the user explicitly quit.
+  // This keeps the camera feed alive when the user accidentally clicks X.
+  win.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      hideAllWindowsToTray();
+    }
+  });
 
   return win;
 }
@@ -1062,11 +1164,16 @@ ipcMain.handle('app:quit', async (e) => {
         stopScrcpy(title);
       }
     }
+    // Temporarily set isQuitting so the close handler doesn't hide to tray.
+    const wasQuitting = isQuitting;
+    isQuitting = true;
     win.close();
+    isQuitting = wasQuitting;
     return;
   }
 
   // Last window — quit the entire app
+  isQuitting = true;
   stopAllScrcpy();
   app.quit();
 });
@@ -1095,8 +1202,9 @@ ipcMain.handle('show-dialog', async (e, opts) => {
 // Each handler finds the BrowserWindow that sent the request via the event's
 // sender, so it works correctly for multi-window mode.
 ipcMain.handle('window:minimize', (e) => {
-  const w = BrowserWindow.fromWebContents(e.sender);
-  if (w) w.minimize();
+  // Minimizing hides the window to the tray so the virtual camera output
+  // keeps running in the background. The tray icon lets the user restore.
+  hideAllWindowsToTray();
   return true;
 });
 
@@ -1149,6 +1257,9 @@ app.whenReady().then(async () => {
   saveSettings(appSettings);
   logToFile('Settings saved');
 
+  // Create the system-tray icon so minimize-to-tray works from the start.
+  createTray();
+
   // Show splash screen first (unless disabled in settings).
   if (appSettings.showSplash) {
     logToFile('Splash enabled, creating splash');
@@ -1167,8 +1278,14 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', stopAllScrcpy);
+app.on('before-quit', () => {
+  isQuitting = true;
+  stopAllScrcpy();
+  if (tray && !tray.isDestroyed()) tray.destroy();
+});
 app.on('window-all-closed', () => {
+  // Don't quit when windows are hidden to tray — they're still in `windows`.
+  // Only quit if the user explicitly chose Quit (isQuitting) or during init.
   if (isInitializing || windows.size > 0) return;
   stopAllScrcpy();
   app.quit();

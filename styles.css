@@ -250,6 +250,12 @@ button:active {
   pointer-events: none;
 }
 
+/* Active/toggled state for toggle-style toolbar buttons (e.g. show-all-cams) */
+.toolbar-btn.toggled {
+  background: var(--accent, #4a9eff);
+  color: #fff;
+}
+
 .toolbar-btn svg {
   flex-shrink: 0;
   opacity: 0.9;
@@ -852,6 +858,98 @@ button:active {
   min-width: var(--ctrl-h);
   height: var(--ctrl-h);
   font-size: 12px;
+}
+
+/* ---- AVATAR FACE OVERLAY ---- */
+#avatar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+#btn-avatar {
+  background: var(--bg-control);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+#btn-avatar.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 700;
+}
+
+#avatar-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 10;
+}
+
+#avatar-badge.hidden {
+  display: none;
+}
+
+.avatar-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.avatar-preview-wrap.hidden {
+  display: none;
+}
+
+#avatar-default-preview {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--bg-dark);
+}
+
+.avatar-premium-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.avatar-expression-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.avatar-expression-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.avatar-expression-item input[type="file"] {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.avatar-expression-item img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--bg-dark);
+}
+
+.avatar-expression-item img.hidden {
+  display: none;
 }
 
 .gs-slider-wrap {

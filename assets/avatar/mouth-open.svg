@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Placeholder avatar: mouth open expression -->
+  <!-- Replace this file in assets/avatar/ with your own PNG/SVG -->
+  <circle cx="256" cy="256" r="200" fill="#facc15" stroke="#000" stroke-width="8"/>
+  <circle cx="196" cy="226" r="24" fill="#000"/>
+  <circle cx="316" cy="226" r="24" fill="#000"/>
+  <ellipse cx="256" cy="336" rx="60" ry="40" fill="#000"/>
+</svg>

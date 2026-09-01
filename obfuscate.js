@@ -25,6 +25,7 @@ const OPTIONS = {
     'electronAPI',
     'licenseAPI',
     'SelfieSegmentation',
+    'FaceMesh',
     'mediapipe',
   ],
 };
